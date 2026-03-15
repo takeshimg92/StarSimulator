@@ -37,3 +37,4 @@ We should probably use techniques used in video-game development for realistic f
 * Let us launch features in stages. Propose, based on what I've written so far, what the MVP is and what consequent versions may add.
 * Less is more when it comes to code. 
 * You are free to choose the structure for this repo. 
+* **Never** add Claude as a contributor.
