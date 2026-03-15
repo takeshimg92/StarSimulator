@@ -41,9 +41,21 @@ const TintShader = {
 };
 
 let scene, camera, renderer, composer, bloomPass, tintPass, controls;
-let starMesh, starMaterial;
-let baseBloom = 0.8; // target bloom before distance adjustment
+let starMesh, starMaterial, starfieldMesh;
+let baseBloom = 0.8;
 let rotationSpeed = 0.002;
+const STARFIELD_BASE_SPEED = 0.00015; // gentle ambient rotation
+let starfieldRotationSpeed = 0; // additional speed from time evolution
+let frozen = false; // true when star has died
+
+// Slice view state
+let sliceEnabled = false;
+let crossSectionGroup = null;
+let csCanvas = null, csCtx = null, csTexture = null;
+const CS_SIZE = 512;
+const CS_HALF = CS_SIZE / 2;
+let csProfiles = null;  // cached profiles for cross-section drawing
+let csMass = 1.0;       // current stellar mass for zone structure
 
 // --- Smooth transition state ---
 // Current (displayed) values lerp toward target values each frame
@@ -118,6 +130,7 @@ export function initRenderer(container) {
       uBrightness: { value: 1.0 },
       uTint: { value: new THREE.Vector3(1, 1, 1) },
       uTime: { value: 0.0 },
+      uSliceEnabled: { value: 0.0 },
     },
     vertexShader: starVertexShader,
     fragmentShader: starFragmentShader,
@@ -125,6 +138,31 @@ export function initRenderer(container) {
 
   starMesh = new THREE.Mesh(geometry, starMaterial);
   scene.add(starMesh);
+
+  // Cross-section: single canvas-textured disc with radial gradient + convection
+  crossSectionGroup = new THREE.Group();
+  crossSectionGroup.visible = false;
+
+  csCanvas = document.createElement('canvas');
+  csCanvas.width = CS_SIZE;
+  csCanvas.height = CS_SIZE;
+  csCtx = csCanvas.getContext('2d');
+
+  csTexture = new THREE.CanvasTexture(csCanvas);
+  csTexture.minFilter = THREE.LinearFilter;
+
+  const discGeo = new THREE.CircleGeometry(1.0, 128);
+  const discMat = new THREE.MeshBasicMaterial({
+    map: csTexture,
+    transparent: true,
+    opacity: 0.9,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const disc = new THREE.Mesh(discGeo, discMat);
+  crossSectionGroup.add(disc);
+
+  scene.add(crossSectionGroup);
 
   // Orbit controls
   controls = new OrbitControls(camera, renderer.domElement);
@@ -295,7 +333,281 @@ function addStarfield() {
     transparent: true,
     opacity: 0.9,
   });
-  scene.add(new THREE.Points(geometry, material));
+  starfieldMesh = new THREE.Points(geometry, material);
+  scene.add(starfieldMesh);
+}
+
+/**
+ * Zone structure depends on mass:
+ *   M < 1.3 M☉: radiative core, radiative mid-zone, convective envelope
+ *   M ≥ 1.3 M☉: convective core, radiative envelope
+ *
+ * Returns { convInner, convOuter, coreConvective }
+ *   - If coreConvective: convection is from 0 to convOuter (core convection)
+ *   - Otherwise: convection is from convInner to 1.0 (envelope convection)
+ */
+function getConvectionZone(mass) {
+  if (mass >= 1.3) {
+    // Massive stars: convective core extends further with mass
+    const coreConvR = Math.min(0.5, 0.2 + 0.1 * (mass - 1.3));
+    return { convInner: 0, convOuter: coreConvR, coreConvective: true };
+  }
+  // Solar-type: convective envelope starts deeper for lower-mass stars
+  const envConvR = Math.max(0.4, 0.7 - 0.2 * (1.0 - mass));
+  return { convInner: envConvR, convOuter: 1.0, coreConvective: false };
+}
+
+/**
+ * Simple 1D hash for deterministic pseudo-random per-cell values.
+ */
+function hashf(n) {
+  return ((Math.sin(n * 127.1 + 311.7) * 43758.5453) % 1 + 1) % 1;
+}
+
+/**
+ * Draw the cross-section canvas: radial temperature gradient, boundary rings,
+ * and animated convection cells in the appropriate zone.
+ */
+function drawCrossSection(time) {
+  if (!csCtx || !csProfiles) return;
+
+  const ctx = csCtx;
+  const R = CS_HALF;
+  ctx.clearRect(0, 0, CS_SIZE, CS_SIZE);
+
+  const profiles = csProfiles;
+  const numR = profiles.r.length;
+  const zone = getConvectionZone(csMass);
+
+  // --- Radial gradient background ---
+  // Hot interior is pushed toward white; only the outer layers show color.
+  const steps = 80;
+  for (let i = steps - 1; i >= 0; i--) {
+    const rFrac = (i + 0.5) / steps;
+    const profIdx = Math.min(numR - 1, Math.round(rFrac * (numR - 1)));
+    let T = profiles.T[profIdx];
+    if (T < 3000) T = 3000;
+
+    const rgb = temperatureToRGB(T);
+    // Desaturate toward white for interior (hot plasma is nearly white)
+    const whiteness = Math.max(0, 1 - rFrac * 1.5); // 1 at center, 0 at r/R=0.67+
+    const cr = rgb.r + (1 - rgb.r) * whiteness * 0.7;
+    const cg = rgb.g + (1 - rgb.g) * whiteness * 0.7;
+    const cb = rgb.b + (1 - rgb.b) * whiteness * 0.7;
+    const brightness = rFrac < 0.25 ? 0.95 : (0.85 - 0.3 * (rFrac - 0.25));
+
+    ctx.beginPath();
+    ctx.arc(R, R, rFrac * R + R / steps, 0, Math.PI * 2);
+    ctx.fillStyle = `rgb(${Math.round(cr * brightness * 255)}, ${Math.round(cg * brightness * 255)}, ${Math.round(cb * brightness * 255)})`;
+    ctx.fill();
+  }
+
+  // --- Radiative pulses: concentric rings expanding outward ---
+  // In radiative zones, energy is carried by photon diffusion. We show this
+  // as faint concentric rings that drift outward and fade.
+  const NUM_PULSES = 6;
+  const pulsePeriod = 4.0; // seconds for one pulse to cross the zone
+
+  // Determine radiative zone extent(s)
+  const radZones = [];
+  if (zone.coreConvective) {
+    // Massive star: radiative envelope from convOuter to 1.0
+    if (zone.convOuter < 0.95) radZones.push({ r0: zone.convOuter, r1: 0.95 });
+  } else {
+    // Solar-type: radiative zone from core boundary (0.25) to convInner
+    if (zone.convInner > 0.30) radZones.push({ r0: 0.25, r1: zone.convInner });
+  }
+
+  for (const rz of radZones) {
+    const rzThickness = rz.r1 - rz.r0;
+    for (let pi = 0; pi < NUM_PULSES; pi++) {
+      // Each pulse travels outward over pulsePeriod, staggered in phase
+      const phase = (pi / NUM_PULSES);
+      const t = ((time / pulsePeriod + phase) % 1.0); // 0→1 across zone
+      const rFrac = rz.r0 + rzThickness * t;
+      const rPx = rFrac * R;
+
+      // Fade in at birth, fade out at death
+      const fadeIn = Math.min(1, t * 5);        // quick fade in over first 20%
+      const fadeOut = Math.min(1, (1 - t) * 4);  // fade out over last 25%
+      const alpha = 0.12 * fadeIn * fadeOut;
+
+      if (alpha < 0.005) continue;
+
+      ctx.beginPath();
+      ctx.arc(R, R, rPx, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255, 245, 220, ${alpha.toFixed(3)})`;
+      ctx.lineWidth = 1.0;
+      ctx.stroke();
+    }
+  }
+
+  // --- Convection flowlines ---
+  const convR0 = zone.convInner;
+  const convR1 = zone.convOuter;
+  const convThickness = convR1 - convR0;
+
+  if (convThickness > 0.05) {
+    // Many convection cells with randomized sizes, depths, speeds, loop counts.
+    // Each cell is a closed circulation loop drawn as animated dashed streamlines.
+    const NUM_CELLS = Math.round(80 + 40 * convThickness);
+
+    for (let ci = 0; ci < NUM_CELLS; ci++) {
+      // --- Per-cell randomized properties ---
+      const h0 = hashf(ci);
+      const h1 = hashf(ci + 100);
+      const h2 = hashf(ci + 200);
+      const h3 = hashf(ci + 300);
+      const h4 = hashf(ci + 400);
+      const h5 = hashf(ci + 500);
+      const h6 = hashf(ci + 600);
+
+      // Angular position and width: variable-width cells
+      const baseAngle = (ci / NUM_CELLS) * Math.PI * 2 + (h0 - 0.5) * 0.15;
+      const cellSpan = (Math.PI * 2 / NUM_CELLS) * (0.6 + h1 * 0.8); // 60–140% of even spacing
+
+      const cellStart = baseAngle - cellSpan / 2;
+      const cellEnd = baseAngle + cellSpan / 2;
+
+      // Radial extent: some cells are shallow, some deep
+      const depthFrac = 0.4 + h2 * 0.55; // 40–95% of zone thickness
+      const rInnerBase = convR0 + convThickness * (1 - depthFrac) * h3 * 0.5;
+      const rOuterBase = convR1 - convThickness * (1 - depthFrac) * (1 - h3) * 0.3;
+
+      // Number of nested loops: 1–4
+      const numLoops = 1 + Math.floor(h4 * 3.5);
+
+      // Flow speed and direction
+      const cw = h5 > 0.5;
+      const speed = 25 + h6 * 40; // 25–65 px/s
+
+      // Dash pattern varies per cell
+      const dashLen = 5 + h0 * 8;
+      const gapLen = 8 + h1 * 10;
+
+      for (let li = 0; li < numLoops; li++) {
+        const loopFrac = (li + 1) / (numLoops + 1);
+        const rInner = rInnerBase + (rOuterBase - rInnerBase) * loopFrac * 0.3;
+        const rOuter = rOuterBase - (rOuterBase - rInnerBase) * loopFrac * 0.12;
+        const aInset = cellSpan * loopFrac * 0.1;
+        const a0 = cellStart + aInset;
+        const a1 = cellEnd - aInset;
+        const cellMid = (a0 + a1) / 2;
+
+        const offset = time * speed * (cw ? 1 : -1) + li * 25 + ci * 13;
+        const alpha = 0.18 + 0.15 * (1 - li / numLoops);
+        const lineW = 0.8 + 0.6 * (1 - li / numLoops);
+
+        ctx.lineWidth = lineW;
+        ctx.setLineDash([dashLen, gapLen]);
+        ctx.lineDashOffset = -offset;
+        ctx.strokeStyle = `rgba(255, 225, 180, ${alpha.toFixed(2)})`;
+
+        // Draw the entire loop as a smooth closed cardinal spline.
+        // Sample points around an oval path in polar coords, then
+        // connect with the midpoint-quadratic technique for a smooth curve.
+        const iA1 = a1 - (a1 - cellMid) * 0.35;
+        const iA0 = a0 + (cellMid - a0) * 0.35;
+        const N = 24; // sample points around the loop
+        const pts = [];
+
+        // Angular noise amplitude — scales with cell span so it's proportional
+        const noiseAmp = cellSpan * 0.25;
+
+        for (let s = 0; s < N; s++) {
+          const t = s / N; // 0..1 around the loop
+          let r, a;
+          if (t < 0.35) {
+            const f = t / 0.35;
+            r = rOuter;
+            a = cw ? (a0 + (a1 - a0) * f) : (a1 + (a0 - a1) * f);
+          } else if (t < 0.50) {
+            const f = (t - 0.35) / 0.15;
+            const sf = f * f * (3 - 2 * f);
+            r = rOuter + (rInner - rOuter) * sf;
+            const aFrom = cw ? a1 : a0;
+            const aTo = cw ? iA1 : iA0;
+            a = aFrom + (aTo - aFrom) * sf;
+          } else if (t < 0.85) {
+            const f = (t - 0.50) / 0.35;
+            r = rInner;
+            a = cw ? (iA1 + (iA0 - iA1) * f) : (iA0 + (iA1 - iA0) * f);
+          } else {
+            const f = (t - 0.85) / 0.15;
+            const sf = f * f * (3 - 2 * f);
+            r = rInner + (rOuter - rInner) * sf;
+            const aFrom = cw ? iA0 : iA1;
+            const aTo = cw ? a0 : a1;
+            a = aFrom + (aTo - aFrom) * sf;
+          }
+          // Per-point angular noise — deterministic from cell + point index + slow time drift
+          const noise = (hashf(ci * 100 + s) - 0.5) * 2; // -1..1
+          const timeDrift = Math.sin(time * 0.4 + ci * 1.7 + s * 0.8) * 0.5;
+          a += (noise + timeDrift) * noiseAmp;
+
+          pts.push({ x: R + r * R * Math.cos(a), y: R + r * R * Math.sin(a) });
+        }
+
+        // Draw smooth closed curve through pts using midpoint quadratics
+        ctx.beginPath();
+        const p0 = pts[0], pN = pts[N - 1];
+        ctx.moveTo((pN.x + p0.x) / 2, (pN.y + p0.y) / 2);
+        for (let s = 0; s < N; s++) {
+          const next = pts[(s + 1) % N];
+          ctx.quadraticCurveTo(pts[s].x, pts[s].y, (pts[s].x + next.x) / 2, (pts[s].y + next.y) / 2);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+    ctx.setLineDash([]);
+  }
+
+  // --- Pulsating core glow ---
+  const corePulse = 0.9 + 0.1 * Math.sin(time * 1.5);
+  const coreGlowR = 0.25 * R * 1.3; // glow extends slightly beyond q
+  const coreGrad = ctx.createRadialGradient(R, R, 0.15 * R, R, R, coreGlowR);
+  coreGrad.addColorStop(0, `rgba(255, 255, 240, ${(0.25 * corePulse).toFixed(3)})`);
+  coreGrad.addColorStop(0.6, `rgba(255, 250, 220, ${(0.1 * corePulse).toFixed(3)})`);
+  coreGrad.addColorStop(1, 'rgba(255, 240, 200, 0)');
+  ctx.beginPath();
+  ctx.arc(R, R, coreGlowR, 0, Math.PI * 2);
+  ctx.fillStyle = coreGrad;
+  ctx.fill();
+
+  // --- Soft boundary glows (instead of hard rings) ---
+  // Core boundary glow at q=0.25
+  const coreBndR = 0.25 * R;
+  const coreBndW = R * 0.03; // glow width
+  const coreBndGrad = ctx.createRadialGradient(R, R, coreBndR - coreBndW, R, R, coreBndR + coreBndW);
+  coreBndGrad.addColorStop(0, 'rgba(255, 255, 220, 0)');
+  coreBndGrad.addColorStop(0.45, 'rgba(255, 255, 220, 0.2)');
+  coreBndGrad.addColorStop(0.55, 'rgba(255, 255, 220, 0.2)');
+  coreBndGrad.addColorStop(1, 'rgba(255, 255, 220, 0)');
+  ctx.beginPath();
+  ctx.arc(R, R, coreBndR + coreBndW, 0, Math.PI * 2);
+  ctx.fillStyle = coreBndGrad;
+  ctx.fill();
+
+  // Convection zone boundary glow
+  const convBndR = (zone.coreConvective ? zone.convOuter : zone.convInner) * R;
+  const convBndW = R * 0.025;
+  const convBndGrad = ctx.createRadialGradient(R, R, convBndR - convBndW, R, R, convBndR + convBndW);
+  convBndGrad.addColorStop(0, 'rgba(255, 200, 120, 0)');
+  convBndGrad.addColorStop(0.4, 'rgba(255, 200, 120, 0.15)');
+  convBndGrad.addColorStop(0.6, 'rgba(255, 200, 120, 0.15)');
+  convBndGrad.addColorStop(1, 'rgba(255, 200, 120, 0)');
+  ctx.beginPath();
+  ctx.arc(R, R, convBndR + convBndW, 0, Math.PI * 2);
+  ctx.fillStyle = convBndGrad;
+  ctx.fill();
+
+  csTexture.needsUpdate = true;
+}
+
+export function setCrossSectionProfiles(profiles, mass) {
+  csProfiles = profiles;
+  if (mass !== undefined) csMass = mass;
 }
 
 let lastTime = performance.now();
@@ -338,6 +650,12 @@ function animate() {
     wobbleAmount = 0;
   }
 
+  // Sync cross-section with star scale and redraw canvas texture
+  if (crossSectionGroup && sliceEnabled) {
+    crossSectionGroup.scale.setScalar(scale);
+    drawCrossSection(now / 1000);
+  }
+
   // Bloom strength — reduce when zoomed in so surface detail is visible
   const dist = camera.position.length();
   const distFactor = Math.max(0.2, Math.min(1.0, (dist - 2) / 4));
@@ -346,11 +664,18 @@ function animate() {
   // Orbit controls
   controls.update();
 
-  // Photon flux
-  updatePhotons(dt);
+  if (!frozen) {
+    // Photon flux
+    updatePhotons(dt);
 
-  // Rotation
-  starMesh.rotation.y += rotationSpeed;
+    // Rotation
+    starMesh.rotation.y += rotationSpeed;
+
+    // Starfield counter-rotation: ambient + time evolution boost
+    if (starfieldMesh) {
+      starfieldMesh.rotation.y -= (STARFIELD_BASE_SPEED + starfieldRotationSpeed * dt);
+    }
+  }
 
   composer.render();
 }
@@ -409,10 +734,34 @@ export function setSpotsVisible(visible) {
 
 export function stopPhotons() {
   photonEmissionRate = 0;
-  // Kill all active photons
   for (const p of photons) p.active = false;
 }
+
+export function freezeStar() {
+  frozen = true;
+  stopPhotons();
+}
+
+export function unfreezeStar() {
+  frozen = false;
+}
+
+export function setStarfieldSpeed(speed) {
+  starfieldRotationSpeed = speed;
+}
+
+export function setSliceView(enabled) {
+  sliceEnabled = enabled;
+  starMaterial.uniforms.uSliceEnabled.value = enabled ? 1.0 : 0.0;
+  crossSectionGroup.visible = enabled;
+}
+
+export function getCrossSectionGroup() { return crossSectionGroup; }
 
 export function getRendererElement() {
   return renderer?.domElement;
 }
+
+export function getCamera() { return camera; }
+export function getStarMesh() { return starMesh; }
+export function getCurrentScale() { return current.scale; }

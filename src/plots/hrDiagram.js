@@ -6,6 +6,8 @@
  *   - Main sequence band as a reference
  *   - Trail of past positions (grayed out)
  *   - Current position (bright, colored by blackbody temperature)
+ *
+ * The axes auto-zoom to keep the trail visible while maintaining context.
  */
 
 import { temperatureToRGB } from '../physics/blackbody.js';
@@ -18,14 +20,32 @@ let canvas, ctx, dpr;
 const trail = [];
 const MAX_TRAIL = 500;
 
-// Plot bounds (log scale)
-const LOG_T_MIN = Math.log10(2500);   // cool edge (right)
-const LOG_T_MAX = Math.log10(50000);  // hot edge (left)
-const LOG_L_MIN = -3;                  // 0.001 L☉
-const LOG_L_MAX = 6;                   // 10^6 L☉
+// Default (full) plot bounds
+const DEFAULT_LOG_T_MIN = Math.log10(2500);
+const DEFAULT_LOG_T_MAX = Math.log10(50000);
+const DEFAULT_LOG_L_MIN = -3;
+const DEFAULT_LOG_L_MAX = 6;
+
+// Current (possibly zoomed) bounds — smoothly interpolated
+let logTMin = DEFAULT_LOG_T_MIN;
+let logTMax = DEFAULT_LOG_T_MAX;
+let logLMin = DEFAULT_LOG_L_MIN;
+let logLMax = DEFAULT_LOG_L_MAX;
+
+// Target bounds (what we're interpolating toward)
+let targetLogTMin = logTMin;
+let targetLogTMax = logTMax;
+let targetLogLMin = logLMin;
+let targetLogLMax = logLMax;
 
 // Padding
 const PAD = { top: 8, right: 12, bottom: 24, left: 48 };
+
+// Minimum padding around data in log units
+const DATA_MARGIN = 0.5;
+// Minimum axis span
+const MIN_SPAN_L = 1.5;
+const MIN_SPAN_T = 0.3;
 
 export function initHRDiagram(canvasElement) {
   canvas = canvasElement;
@@ -57,9 +77,61 @@ function toCanvas(logT, logL) {
   const plotH = h - PAD.top - PAD.bottom;
 
   // T is reversed
-  const x = PAD.left + (1 - (logT - LOG_T_MIN) / (LOG_T_MAX - LOG_T_MIN)) * plotW;
-  const y = PAD.top + (1 - (logL - LOG_L_MIN) / (LOG_L_MAX - LOG_L_MIN)) * plotH;
+  const x = PAD.left + (1 - (logT - logTMin) / (logTMax - logTMin)) * plotW;
+  const y = PAD.top + (1 - (logL - logLMin) / (logLMax - logLMin)) * plotH;
   return { x, y };
+}
+
+/**
+ * Compute dynamic bounds that keep all trail points + current position visible,
+ * with some margin, while always including the MS band context.
+ */
+function updateBounds(currentLogT, currentLogL) {
+  if (trail.length < 3) {
+    // Not enough data to zoom — use defaults
+    targetLogTMin = DEFAULT_LOG_T_MIN;
+    targetLogTMax = DEFAULT_LOG_T_MAX;
+    targetLogLMin = DEFAULT_LOG_L_MIN;
+    targetLogLMax = DEFAULT_LOG_L_MAX;
+  } else {
+    // Find data extent
+    let dLogTMin = currentLogT, dLogTMax = currentLogT;
+    let dLogLMin = currentLogL, dLogLMax = currentLogL;
+    for (const t of trail) {
+      dLogTMin = Math.min(dLogTMin, t.logT);
+      dLogTMax = Math.max(dLogTMax, t.logT);
+      dLogLMin = Math.min(dLogLMin, t.logL);
+      dLogLMax = Math.max(dLogLMax, t.logL);
+    }
+
+    // Add margin
+    const spanL = Math.max(dLogLMax - dLogLMin + 2 * DATA_MARGIN, MIN_SPAN_L);
+    const spanT = Math.max(dLogTMax - dLogTMin + 2 * DATA_MARGIN, MIN_SPAN_T);
+
+    const centerL = (dLogLMin + dLogLMax) / 2;
+    const centerT = (dLogTMin + dLogTMax) / 2;
+
+    // Ensure we don't zoom tighter than the data needs, but also keep MS context
+    // Include at least the range that shows the MS band near the data
+    const msContextMinT = Math.min(centerT - spanT * 0.6, DEFAULT_LOG_T_MIN);
+    const msContextMaxT = Math.max(centerT + spanT * 0.6, Math.min(DEFAULT_LOG_T_MAX, centerT + spanT));
+
+    targetLogLMin = centerL - spanL / 2;
+    targetLogLMax = centerL + spanL / 2;
+    targetLogTMin = Math.max(DEFAULT_LOG_T_MIN, centerT - spanT / 2);
+    targetLogTMax = Math.min(DEFAULT_LOG_T_MAX, centerT + spanT / 2);
+
+    // Clamp: never zoom beyond the full default range
+    targetLogLMin = Math.max(DEFAULT_LOG_L_MIN, targetLogLMin);
+    targetLogLMax = Math.min(DEFAULT_LOG_L_MAX, targetLogLMax);
+  }
+
+  // Smooth interpolation toward targets
+  const rate = 0.08;
+  logTMin += (targetLogTMin - logTMin) * rate;
+  logTMax += (targetLogTMax - logTMax) * rate;
+  logLMin += (targetLogLMin - logLMin) * rate;
+  logLMax += (targetLogLMax - logLMax) * rate;
 }
 
 /**
@@ -79,6 +151,7 @@ export function updateHR(temperature, luminosity) {
     if (trail.length > MAX_TRAIL) trail.shift();
   }
 
+  updateBounds(logT, logL);
   draw(logT, logL, temperature);
 }
 
@@ -93,7 +166,6 @@ function draw(currentLogT, currentLogL, currentT) {
   const plotH = h - PAD.top - PAD.bottom;
 
   // Main sequence band — computed from the same scaling relations the sim uses
-  // Sample masses from 0.1 to 50 M☉, get (T, L) for each
   const msSamples = [];
   for (let logM = -1; logM <= 1.7; logM += 0.05) {
     const mass = Math.pow(10, logM);
@@ -120,35 +192,40 @@ function draw(currentLogT, currentLogL, currentT) {
   // MS label
   ctx.font = '9px Inter, monospace';
   ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-  // Place label near a ~3 M☉ star on the band
   const labelT = temperatureFromMass(3);
   const labelL = luminosityFromMass(3);
   const msLabelPos = toCanvas(Math.log10(labelT), Math.log10(labelL) + 0.6);
-  ctx.fillText('Main Sequence', msLabelPos.x - 30, msLabelPos.y);
+  if (msLabelPos.x > PAD.left && msLabelPos.x < w - PAD.right &&
+      msLabelPos.y > PAD.top && msLabelPos.y < h - PAD.bottom) {
+    ctx.fillText('Main Sequence', msLabelPos.x - 30, msLabelPos.y);
+  }
 
-  // Grid lines
+  // Grid lines — compute nice tick values for current bounds
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
   ctx.lineWidth = 1;
 
-  // Horizontal grid (luminosity)
-  for (let logL = LOG_L_MIN; logL <= LOG_L_MAX; logL += 1) {
-    const p = toCanvas(LOG_T_MIN, logL);
-    const p2 = toCanvas(LOG_T_MAX, logL);
+  // Horizontal grid (luminosity) — integer powers of 10 within bounds
+  for (let logL = Math.ceil(logLMin); logL <= Math.floor(logLMax); logL += 1) {
+    const p = toCanvas(logTMin, logL);
+    const p2 = toCanvas(logTMax, logL);
     ctx.beginPath();
-    ctx.moveTo(p.x, p.y);
-    ctx.lineTo(p2.x, p.y);
+    ctx.moveTo(PAD.left, p.y);
+    ctx.lineTo(PAD.left + plotW, p.y);
     ctx.stroke();
   }
 
-  // Vertical grid (temperature)
-  const tempTicks = [3000, 5000, 10000, 20000, 40000];
+  // Vertical grid (temperature) — select visible ticks
+  const allTempTicks = [2500, 3000, 4000, 5000, 7000, 10000, 15000, 20000, 30000, 40000];
+  const tempTicks = allTempTicks.filter(t => {
+    const lt = Math.log10(t);
+    return lt >= logTMin && lt <= logTMax;
+  });
   for (const t of tempTicks) {
     const logT = Math.log10(t);
-    const p = toCanvas(logT, LOG_L_MIN);
-    const p2 = toCanvas(logT, LOG_L_MAX);
+    const p = toCanvas(logT, logLMin);
     ctx.beginPath();
-    ctx.moveTo(p.x, p.y);
-    ctx.lineTo(p.x, p2.y);
+    ctx.moveTo(p.x, PAD.top);
+    ctx.lineTo(p.x, PAD.top + plotH);
     ctx.stroke();
   }
 
@@ -198,32 +275,35 @@ function draw(currentLogT, currentLogL, currentT) {
   // X-axis (temperature, reversed) — ticks
   for (const t of tempTicks) {
     const logT = Math.log10(t);
-    const p = toCanvas(logT, LOG_L_MIN);
+    const p = toCanvas(logT, logLMin);
     const label = t >= 10000 ? `${t / 1000}k` : `${t}`;
     const textW = ctx.measureText(label).width;
-    ctx.fillText(label, p.x - textW / 2, p.y + 14);
+    ctx.fillText(label, p.x - textW / 2, PAD.top + plotH + 14);
   }
 
   // Y-axis (luminosity) — use Unicode superscripts
-  const superDigits = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+  const superDigits = { '-': '\u207B', '0': '\u2070', '1': '\u00B9', '2': '\u00B2', '3': '\u00B3', '4': '\u2074', '5': '\u2075', '6': '\u2076', '7': '\u2077', '8': '\u2078', '9': '\u2079' };
   function toSuperscript(n) {
     return String(n).split('').map(c => superDigits[c] || c).join('');
   }
 
-  for (let logL = LOG_L_MIN; logL <= LOG_L_MAX; logL += 2) {
-    const p = toCanvas(LOG_T_MAX, logL);
+  for (let logL = Math.ceil(logLMin); logL <= Math.floor(logLMax); logL += 1) {
+    const p = toCanvas(logTMax, logL);
+    // Only label every other tick if range is large, or every tick if small
+    const range = logLMax - logLMin;
+    if (range > 4 && logL % 2 !== 0) continue;
     const label = logL === 0 ? '1' : `10${toSuperscript(logL)}`;
     ctx.fillText(label, 14, p.y + 3);
   }
 
   // Axis titles
   ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-  ctx.fillText('← Temperature (K)', PAD.left + plotW / 2 - 35, h - 2);
+  ctx.fillText('\u2190 Temperature (K)', PAD.left + plotW / 2 - 35, h - 2);
 
   ctx.save();
   ctx.translate(10, PAD.top + plotH / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillText('Luminosity (L☉)', -35, 0);
+  ctx.fillText('Luminosity (L\u2609)', -35, 0);
   ctx.restore();
 }
 
@@ -232,4 +312,13 @@ function draw(currentLogT, currentLogL, currentT) {
  */
 export function clearHRTrail() {
   trail.length = 0;
+  // Reset bounds to defaults
+  logTMin = DEFAULT_LOG_T_MIN;
+  logTMax = DEFAULT_LOG_T_MAX;
+  logLMin = DEFAULT_LOG_L_MIN;
+  logLMax = DEFAULT_LOG_L_MAX;
+  targetLogTMin = logTMin;
+  targetLogTMax = logTMax;
+  targetLogLMin = logLMin;
+  targetLogLMax = logLMax;
 }

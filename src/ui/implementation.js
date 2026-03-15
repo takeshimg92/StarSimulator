@@ -13,7 +13,9 @@ const sections = [
 
 The singularity at $\\xi = 0$ is handled via L'Hôpital's rule. The solution is computed once and cached, then mapped to physical units using the user's chosen mass $M$ and radius $R$:`,
     equation2: String.raw`\rho(r) = \rho_c\,\theta^3, \quad T(r) = T_c\,\theta, \quad P(r) = P_c\,\theta^4`,
-    after2: `where the central values $\\rho_c$, $T_c$, $P_c$ are derived from $M$, $R$, and the ideal gas law with mean molecular weight $\\mu \\approx 0.62$.`,
+    after2: `where the central values $\\rho_c$, $T_c$, $P_c$ are derived from $M$, $R$, and the ideal gas law with mean molecular weight $\\mu \\approx 0.62$.
+
+<b>Photosphere blending:</b> the $n=3$ polytrope has $\\theta \\to 0$ at the surface, giving $T \\to 0$ — unphysical, since the real photosphere has $T = T_{\\text{eff}}$. For $r/R > 0.8$, the temperature profile is smoothstep-blended toward $T_{\\text{eff}}$: $T(r) = T_{\\text{poly}}(r) \\cdot (1-s) + T_{\\text{eff}} \\cdot s$, where $s$ is a cubic smoothstep of $(r/R - 0.8)/0.2$. This preserves the accurate interior profile while avoiding the unphysical surface discontinuity.`,
   },
   {
     title: 'Main-Sequence Scaling Relations',
@@ -26,16 +28,40 @@ The singularity at $\\xi = 0$ is handled via L'Hôpital's rule. The solution is 
 These are the same relations used to draw the main-sequence band on the H-R diagram, ensuring consistency between the sliders and the diagram.`,
   },
   {
-    title: 'Time Evolution',
-    body: `When "Allow passage of time" is enabled, hydrogen fuses into helium at a rate set by the luminosity:`,
-    equation: String.raw`\frac{dX}{dt} = -\frac{L}{\eta\,c^2\,M}, \qquad \eta = 0.007`,
-    after: `As the hydrogen fraction $X$ decreases, the mean molecular weight $\\mu = 1/(2X + 0.75Y + 0.5Z)$ increases. This feeds back into the structure via <b>homology scaling relations</b>:`,
-    equation2: String.raw`L \propto \mu^4, \qquad R \propto \mu^{2.5}`,
-    after2: `The radius exponent (2.5) is chosen slightly steeper than what constant temperature would require ($\\mu^2$), so the star drifts rightward (cooler) on the H-R diagram as it ages — matching observed main-sequence evolution tracks.
+    title: 'Time Evolution: Two-Zone Model',
+    body: `The star is split into two composition zones: a <b>core</b> ($r/R \\leq 0.25$, mass fraction $f_{\\text{core}} = 0.35$) and an <b>envelope</b> ($r/R > 0.25$).
 
-Mass loss from radiation ($dM/dt = -L/c^2$) is also tracked, though it is negligible over stellar lifetimes.
+Only the core burns hydrogen:`,
+    equation: String.raw`\frac{dX_{\text{core}}}{dt} = -\frac{L}{\eta\,c^2\,M_{\text{core}}}, \qquad M_{\text{core}} = f_{\text{core}} \cdot M`,
+    after: `The envelope retains its primordial composition ($X_{\\text{env}} = 0.70$). The temperature profile uses a <b>sigmoid blend</b> at the core-envelope boundary: $\\mu(r) = w(r)\\,\\mu_{\\text{core}} + (1-w(r))\\,\\mu_{\\text{env}}$ where $w(r) = 1/(1 + e^{(r/R - q)/\\delta})$ with $\\delta = 0.05$.
 
-<b>Limitation:</b> the model does not include post-main-sequence evolution (red giant branch, helium flash, etc.). When core hydrogen is exhausted ($X < 0.01$), the simulation stops.`,
+Luminosity and radius scale with composition:`,
+    equation2: String.raw`L \propto \mu_{\text{core}}^{1.1}, \qquad R \propto \mu_{\text{eff}}^{0.85}, \qquad \mu_{\text{eff}} = f_{\text{core}}\,\mu_{\text{core}} + (1-f_{\text{core}})\,\mu_{\text{env}}`,
+    after2: `The low exponents are correct for the two-zone model: only 35% of the mass changes composition, providing natural damping. This reproduces the Sun's observed $\\sim$2$\\times$ luminosity increase over the MS without artificial tuning.
+
+<b>Calibration:</b> at ZAMS ($X_{\\text{core}} = 0.70$), $L \\approx 0.7\\,L_\\odot$. At the present day ($X_{\\text{core}} \\approx 0.34$), $L \\approx 1.0\\,L_\\odot$. At TAMS ($X_{\\text{core}} \\approx 0.05$), $L \\approx 2.0\\,L_\\odot$.
+
+<b>Limitation:</b> post-main-sequence evolution is not yet implemented.`,
+  },
+  {
+    title: 'PP Chain vs CNO Cycle',
+    body: `The tooltip shows the energy generation breakdown when hovering over the core in slice view. The fraction is computed from the ratio of temperature-dependent rates:`,
+    equation: String.raw`\frac{\varepsilon_{\text{CNO}}}{\varepsilon_{\text{PP}}} = 0.02 \times \left(\frac{T_6}{15}\right)^{13}`,
+    after: `where $T_6$ is the temperature in millions of K. This parameterization is calibrated to give PP $\\approx$ 98% at solar core conditions ($T_c = 15$ MK) and crossover around 23 MK, matching detailed nuclear reaction network calculations.
+
+The exponent 13 encodes the difference in temperature sensitivity between the CNO cycle ($T^{16}$) and PP chain ($T^4$), plus corrections for the composition-dependent prefactors.`,
+  },
+  {
+    title: 'Slice View & Cross-Section',
+    body: `The "Show Slice" toggle uses a custom GLSL uniform to discard fragments where $z_{\\text{world}} > 0$, cutting away the front hemisphere. A flat 512$\\times$512 canvas texture at $z = 0$ renders the interior cross-section:
+
+<b>Radial temperature gradient:</b> 80 concentric annuli are drawn, each colored by mapping the Lane-Emden temperature profile through the blackbody-to-RGB function. This produces a smooth gradient from white-yellow at the center ($\\sim$15 MK) to deep orange-red at the surface.
+
+<b>Zone boundaries:</b> a solid ring at $r/R = 0.25$ marks the core boundary; a dashed ring at $r/R = 0.70$ marks the onset of convection.
+
+<b>Convection cells:</b> 14 radial plume/lane pairs are animated in the $r/R > 0.70$ annular region. Bright wedges (rising hot plasma) alternate with dark wedges (sinking cooled plasma), with sinusoidal pulsation for visual variety. Alternating cells rotate in opposite directions.
+
+The canvas texture is re-drawn every frame when slice view is active, and uploaded to the GPU via \`CanvasTexture\`.`,
   },
   {
     title: 'Blackbody Colors',
@@ -59,7 +85,9 @@ Three species are shown at solar composition: H$^+$ (protons), $^4$He, and e$^-$
 
 The main-sequence band is computed by sampling the same scaling relations used by the sliders across masses 0.1–50 $M_\\odot$, ensuring perfect consistency. The band width is $\\pm 0.3$ dex in $\\log L$.
 
-Up to 500 past positions are stored as a trail. Older points fade in opacity, and each point is colored by its blackbody temperature at the time it was recorded. This lets you see the star's full history: both time evolution and manual parameter changes.`,
+Up to 500 past positions are stored as a trail. Older points fade in opacity, and each point is colored by its blackbody temperature at the time it was recorded.
+
+<b>Dynamic auto-zoom:</b> when the trail accumulates 3+ points, the axes smoothly zoom in to keep all data visible with margin. This is essential for seeing subtle main-sequence evolution (the Sun brightens by only $\\sim$2$\\times$ over 10 Gyr — invisible on the default $10^{-3}$–$10^{6}$ scale). The bounds interpolate at 8% per frame for a smooth animated feel. Resetting the star restores the full default range.`,
   },
   {
     title: '3D Rendering',

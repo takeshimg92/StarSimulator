@@ -42,7 +42,9 @@ This simulator models a spherically symmetric, main-sequence star using the <b>p
     equation: String.raw`P = K\,\rho^{1 + 1/n}`,
     after: `where $n$ is the <b>polytropic index</b>. For $n = 3$, this approximates a radiative star in which radiation pressure is significant. Substituting into hydrostatic equilibrium yields the <b>Lane-Emden equation</b>:`,
     equation2: String.raw`\frac{1}{\xi^2}\frac{d}{d\xi}\!\left(\xi^2 \frac{d\theta}{d\xi}\right) + \theta^n = 0`,
-    after2: `Here $\\xi$ is a dimensionless radius and $\\theta$ a dimensionless density ($\\rho = \\rho_c\\,\\theta^n$). This is the equation solved by the simulator to compute the radial profiles you see in the Star tab.`,
+    after2: `Here $\\xi$ is a dimensionless radius and $\\theta$ a dimensionless density ($\\rho = \\rho_c\\,\\theta^n$). This is the equation solved by the simulator to compute the radial profiles you see in the Star tab.
+
+<b>Limitation near the surface:</b> the polytrope has $\\theta \\to 0$ (and therefore $T \\to 0$) at the stellar surface. In reality, the photosphere has $T = T_{\\text{eff}}$, and the temperature profile transitions smoothly through the optically thin outer layers. The simulator blends the polytropic temperature toward $T_{\\text{eff}}$ for $r/R > 0.8$ using a smoothstep function, giving a physically reasonable profile while preserving the accurate interior solution.`,
   },
   {
     title: 'Surface Condition',
@@ -65,14 +67,51 @@ Luminosity depends on both the star's size and its surface temperature. A star c
     after2: `The particle simulation panel shows protons (H$^+$), helium nuclei ($^4$He), and electrons (e$^-$) at solar composition. The histogram tracks proton speeds against the theoretical curve.`,
   },
   {
-    title: 'Stellar Evolution & Time',
-    body: `Stars spend most of their lives on the <b>main sequence</b>, steadily fusing hydrogen into helium. The rate of hydrogen depletion is set by the luminosity:`,
-    equation: String.raw`\frac{dX}{dt} = -\frac{L}{\eta\,c^2\,M}`,
-    after: `where $X$ is the hydrogen mass fraction, $\\eta \\approx 0.007$ is the mass-energy conversion efficiency, and $M$ is the stellar mass. As $X$ decreases, the <b>mean molecular weight</b> $\\mu$ increases:`,
-    equation2: String.raw`\mu = \frac{1}{2X + \tfrac{3}{4}Y + \tfrac{1}{2}Z}`,
-    after2: `Higher $\\mu$ means higher core temperature at the same pressure, which increases the luminosity ($L \\propto \\mu^4$ from homology relations) and causes the star to expand ($R \\propto \\mu^2$). This is a positive feedback loop: the star brightens and swells as it ages.
+    title: 'Nuclear Energy Generation: PP Chain vs CNO Cycle',
+    body: `Main-sequence stars fuse hydrogen into helium via two pathways. The <b>proton-proton (PP) chain</b> fuses protons directly, while the <b>CNO cycle</b> uses carbon, nitrogen, and oxygen as catalysts. Their rates have very different temperature sensitivities:`,
+    equation: String.raw`\varepsilon_{\text{PP}} \propto \rho\,X^2\,T^4, \qquad \varepsilon_{\text{CNO}} \propto \rho\,X\,X_{\text{CNO}}\,T^{16}`,
+    after: `The steep $T^{16}$ dependence of the CNO cycle means it dominates at high temperatures, while the gentler $T^4$ of the PP chain dominates at low temperatures. The crossover occurs at roughly $T \\approx 17$ million K.
 
-When the core hydrogen is nearly exhausted ($X < 0.01$), the star leaves the main sequence. For a solar-mass star, this takes roughly 10 billion years. In the simulator, enabling "Allow passage of time" lets you watch this process unfold — the composition bar, particle species, and sliders all evolve in real time.`,
+For the Sun ($T_c \\approx 15$ MK), the PP chain produces $\\sim$98% of the energy. Stars more massive than $\\sim 1.3\\,M_\\odot$ have hotter cores where the CNO cycle dominates.`,
+    equation2: String.raw`\frac{\varepsilon_{\text{CNO}}}{\varepsilon_{\text{PP}}} \sim \frac{X_{\text{CNO}}}{X}\left(\frac{T}{T_0}\right)^{12}`,
+    after2: `The CNO cycle's steep temperature dependence has an important structural consequence: it concentrates energy generation in a very small central region, creating a steep temperature gradient that drives <b>convective cores</b> in massive stars. In contrast, PP-dominated low-mass stars have radiative cores and develop convection only in their cooler envelopes (see below).`,
+  },
+  {
+    title: 'Convective vs Radiative Zones',
+    body: `Energy flows outward from the core by two mechanisms. In <b>radiative zones</b>, photons carry energy by diffusing through the plasma. In <b>convective zones</b>, bulk plasma motions transport energy — hot gas rises, cools, and sinks back down.
+
+The <b>Schwarzschild criterion</b> determines which regime operates: convection sets in when the radiative temperature gradient becomes steeper than the adiabatic gradient. For solar-type stars ($M \\lesssim 1.3\\,M_\\odot$):`,
+    after: `<b>Core</b> ($r/R < 0.25$): radiative — energy generation is gentle (PP chain), gradient is stable.
+
+<b>Radiative zone</b> ($0.25 < r/R < 0.7$): photon diffusion transports energy through a hot, relatively transparent plasma.
+
+<b>Convective envelope</b> ($r/R > 0.7$): the plasma becomes cooler and more opaque (partially ionized hydrogen has high opacity), so the radiative gradient steepens beyond the adiabatic limit, triggering convection. The granulation visible on the star's surface is the top of these convection cells.
+
+In the "Show Slice" view, you can see animated convection cells in the outer envelope and the three zone boundaries.`,
+  },
+  {
+    title: 'Two-Zone Stellar Evolution',
+    body: `Stars spend most of their lives on the <b>main sequence</b>, fusing hydrogen into helium. Crucially, fusion only happens in the hot, dense <b>core</b> — the outer <b>envelope</b> retains its primordial composition throughout the main sequence.
+
+This simulator models the star as two zones:`,
+    after: `<b>Core</b> ($r/R \\leq 0.25$, containing $\\sim$35% of the mass): hydrogen depletes over time at a rate set by the luminosity:`,
+    equation: String.raw`\frac{dX_{\text{core}}}{dt} = -\frac{L}{\eta\,c^2\,M_{\text{core}}}`,
+    after2: `<b>Envelope</b> ($r/R > 0.25$): no nuclear burning occurs, so $X_{\\text{env}} \\approx 0.70$ remains constant.
+
+As core hydrogen depletes, the core <b>mean molecular weight</b> $\\mu_{\\text{core}}$ increases:`,
+    equation2: String.raw`\mu = \frac{1}{2X + \tfrac{3}{4}Y + \tfrac{1}{2}Z}`,
+  },
+  {
+    title: 'Luminosity & Radius Evolution',
+    body: `The star's luminosity is driven by the core composition, while the radius responds to the mass-weighted effective molecular weight:`,
+    equation: String.raw`L \propto \mu_{\text{core}}^{1.1}, \qquad R \propto \mu_{\text{eff}}^{0.85}`,
+    after: `where $\\mu_{\\text{eff}} = f_{\\text{core}}\\,\\mu_{\\text{core}} + (1 - f_{\\text{core}})\\,\\mu_{\\text{env}}$ with $f_{\\text{core}} \\approx 0.35$.
+
+The low luminosity exponent ($\\alpha = 1.1$) is physically motivated: only 35% of the stellar mass participates in composition changes, providing natural damping against runaway. The effective temperature follows from Stefan-Boltzmann: $T_{\\text{eff}} \\propto (L/R^2)^{1/4}$.
+
+For a solar-mass star, the net effect is a factor $\\sim$2 increase in luminosity over the full main-sequence lifetime ($\\sim$10 Gyr), with a gentle drift <b>up and slightly left</b> on the H-R diagram — matching observations.
+
+When core hydrogen is nearly exhausted ($X_{\\text{core}} < 0.01$), the star leaves the main sequence. Post-MS evolution is not yet implemented.`,
   },
   {
     title: 'Mass-Energy Equivalence',

@@ -46,12 +46,13 @@
       <div id="display-toggles">
         <h2>Display</h2>
         <div class="ms-toggle">
-          <input type="checkbox" id="spots-toggle" checked />
-          <label for="spots-toggle">Show Sunspots</label>
-        </div>
-        <div class="ms-toggle">
           <input type="checkbox" id="sunglasses-toggle" />
           <label for="sunglasses-toggle">Sunglasses</label>
+        </div>
+        <div class="ms-toggle">
+          <input type="checkbox" id="slice-toggle" />
+          <label for="slice-toggle">Show Slice</label>
+          <span class="help-icon" data-tooltip="Cuts the star in half to reveal the core region (shown as a brighter inner sphere). The core is where nuclear fusion happens — it has different composition and higher mean molecular weight than the envelope.">?</span>
         </div>
       </div>
       <button id="reset-btn">Reset to Sun</button>
@@ -90,7 +91,7 @@
         <div id="div4-panel" class="mini-panel">
           <div class="panel-header">
             <span>Composition</span>
-            <span class="help-icon" data-tooltip="Mass fractions of hydrogen (H), helium (He), and metals (Z). As time passes, hydrogen fuses into helium — H decreases, He increases. When H is nearly exhausted, the star leaves the main sequence.">?</span>
+            <span class="help-icon" data-tooltip="Top: mass fractions of hydrogen (H), helium (He), and metals (Z). As time passes, H fuses into He. Bottom: the mean molecular weight μ, which measures the average mass per particle in the plasma. As H → He, μ increases (fewer light particles per unit mass), raising core temperature and luminosity — a key feedback loop in stellar evolution.">?</span>
           </div>
           <canvas id="species-canvas"></canvas>
         </div>
@@ -127,6 +128,7 @@
     </aside>
   </div>
 
+  <div id="star-tooltip" class="star-tooltip" style="display: none;"></div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

@@ -4,17 +4,13 @@ import { solveLaneEmden } from '../utils/laneEmden.js';
 /**
  * Compute radial profiles for a polytropic star (n=3, radiative).
  *
- * Given user-controlled (M, R, T_eff), we solve Lane-Emden n=3 and
- * map the dimensionless solution to physical units.
+ * Two-zone temperature mapping:
+ *   - Core (r/R ≤ q): T uses μ_core
+ *   - Envelope (r/R > q): T uses μ_env
+ *   - Sigmoid transition over ~5% around the boundary
  *
- * Polytropic relation: P = K ρ^(1+1/n)
- *
- * Scaling relations for n=3 polytrope:
- *   ρ_c = -(M / (4π R³)) × (ξ₁ / (dθ/dξ)|_{ξ₁})
- *   P_c = (G M²) / (4π(1+n) R⁴ (dθ/dξ)²|_{ξ₁})   [wait, use standard]
- *
- * We compute central density from the mass and radius,
- * then derive T_c from ideal gas law assuming mean molecular weight μ ≈ 0.6.
+ * Density and pressure profiles remain from the single n=3 polytrope
+ * (the polytropic structure depends on overall M/R, not local composition).
  */
 
 // Cache the Lane-Emden solution since n doesn't change in MVP
@@ -28,13 +24,26 @@ function getLaneEmdenSolution() {
 }
 
 /**
+ * Sigmoid blend function for core-envelope transition.
+ * Returns 1 in the core, 0 in the envelope, smooth transition around q.
+ * @param {number} rFrac - r/R
+ * @param {number} q - core boundary (r/R)
+ * @param {number} width - transition width (default 0.05)
+ */
+function coreWeight(rFrac, q, width = 0.05) {
+  return 1 / (1 + Math.exp((rFrac - q) / width));
+}
+
+/**
  * Compute stellar profiles.
  * @param {number} mass - in solar masses
  * @param {number} radius - in solar radii
  * @param {number} tEff - effective temperature in K
- * @returns {{ r: number[], rho: number[], T: number[], P: number[], L: number, Tc: number, rhoc: number }}
+ * @param {object} muZone - { mu_core, mu_env, q } for two-zone model.
+ *                          Falls back to single μ if a number is passed.
+ * @returns {{ r: number[], rho: number[], T: number[], P: number[], L: number, Tc: number, rhoc: number, Pc: number, mu: number }}
  */
-export function computeProfiles(mass, radius, tEff) {
+export function computeProfiles(mass, radius, tEff, muZone = 0.62) {
   const { G, k_B, m_p, sigma, M_sun, R_sun } = constants;
   const le = getLaneEmdenSolution();
 
@@ -44,32 +53,32 @@ export function computeProfiles(mass, radius, tEff) {
 
   // ξ₁ and -ξ₁² θ'(ξ₁) from Lane-Emden
   const xi1 = le.xi[le.xi.length - 1];
-  const dthetaXi1 = le.dtheta[le.dtheta.length - 1]; // negative value
+  const dthetaXi1 = le.dtheta[le.dtheta.length - 1];
   const negXi1SqDtheta = -xi1 * xi1 * dthetaXi1;
 
-  // Central density: ρ_c = M / (4π R³) × ξ₁ / (-ξ₁² θ'₁) × 3
-  // More precisely: M = 4π R³ ρ_c (-ξ₁² θ'₁) / ξ₁³  × (something)
-  // Standard: M = 4π α³ ρ_c (-ξ₁² θ'(ξ₁)), where α = R/ξ₁
-  // So: ρ_c = M / (4π (R/ξ₁)³ (-ξ₁² θ'₁))
   const alpha = R / xi1;
   const rhoc = M / (4 * Math.PI * alpha ** 3 * negXi1SqDtheta);
-
-  // Mean molecular weight (fully ionized H/He mix, X=0.7, Y=0.28)
-  const mu = 0.62;
-
-  // Central temperature from ideal gas + radiation pressure
-  // For simplicity, use ideal gas: P_c = ρ_c k_B T_c / (μ m_p)
-  // Central pressure from polytropic relation:
-  // P_c = G M² / (4π(n+1) R⁴ (θ'₁)²)  — but let's use a cleaner route
-  // P_c = K ρ_c^(4/3) where K = (4π G / (n+1))^(1/2) × ...
-  // Simpler: P_c = (4πG / (n+1)) × α² × ρ_c²
   const Pc = (4 * Math.PI * G * alpha * alpha * rhoc * rhoc) / (n + 1);
-  const Tc = (Pc * mu * m_p) / (rhoc * k_B);
+
+  // Parse muZone: either a number (legacy) or { mu_core, mu_env, q }
+  let mu_core, mu_env, q;
+  if (typeof muZone === 'number') {
+    mu_core = muZone;
+    mu_env = muZone;
+    q = 0.25;
+  } else {
+    mu_core = muZone.mu_core;
+    mu_env = muZone.mu_env;
+    q = muZone.q || 0.25;
+  }
+
+  // Central temperature from core μ
+  const Tc = (Pc * mu_core * m_p) / (rhoc * k_B);
 
   // Luminosity from Stefan-Boltzmann
   const L = 4 * Math.PI * R * R * sigma * tEff ** 4;
 
-  // Build radial profiles by mapping Lane-Emden solution
+  // Build radial profiles
   const numPoints = le.xi.length;
   const r = new Array(numPoints);
   const rho = new Array(numPoints);
@@ -80,12 +89,25 @@ export function computeProfiles(mass, radius, tEff) {
     const frac = le.xi[i] / xi1; // r/R
     r[i] = frac;
     const th = Math.max(le.theta[i], 0);
-    rho[i] = rhoc * th ** n;           // ρ = ρ_c θ^n
-    P[i] = Pc * th ** (n + 1);         // P = P_c θ^(n+1)
-    T[i] = Tc * th;                     // T = T_c θ  (for ideal gas polytrope)
+    rho[i] = rhoc * th ** n;
+    P[i] = Pc * th ** (n + 1);
+
+    // Two-zone temperature: T = T_c × θ × μ(r)/μ_core
+    const w = coreWeight(frac, q);
+    const muLocal = w * mu_core + (1 - w) * mu_env;
+    let Ti = Tc * th * (muLocal / mu_core);
+
+    // The polytrope gives T→0 at the surface, but the real photosphere
+    // has T = T_eff. Blend smoothly to T_eff for r/R > 0.8.
+    if (frac > 0.8) {
+      const blend = (frac - 0.8) / 0.2; // 0 at r/R=0.8, 1 at r/R=1.0
+      const s = blend * blend * (3 - 2 * blend); // smoothstep
+      Ti = Ti * (1 - s) + tEff * s;
+    }
+    T[i] = Ti;
   }
 
-  return { r, rho, T, P, L, Tc, rhoc, Pc };
+  return { r, rho, T, P, L, Tc, rhoc, Pc, mu: mu_core };
 }
 
 /**
@@ -95,5 +117,5 @@ export const defaults = {
   mass: 1.0,        // M☉
   radius: 1.0,      // R☉
   temperature: 5778, // K
-  hydrogen: 0.70,   // X
+  hydrogen: 0.34,   // X_core (present-day Sun)
 };

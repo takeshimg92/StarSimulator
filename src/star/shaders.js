@@ -5,6 +5,7 @@ export const starVertexShader = /* glsl */ `
   varying vec3 vNormal;
   varying vec3 vViewDir;
   varying vec3 vObjPos;
+  varying vec3 vWorldPos;
 
   // Simple hash for vertex displacement
   float vhash(vec3 p) {
@@ -49,6 +50,7 @@ export const starVertexShader = /* glsl */ `
     vNormal = normalize(normalMatrix * normal);
     vec4 mvPos = modelViewMatrix * vec4(displaced, 1.0);
     vViewDir = normalize(-mvPos.xyz);
+    vWorldPos = (modelMatrix * vec4(displaced, 1.0)).xyz;
     gl_Position = projectionMatrix * mvPos;
   }
 `;
@@ -60,10 +62,12 @@ export const starFragmentShader = /* glsl */ `
   uniform float uBrightness;
   uniform vec3 uTint; // color tint (1,1,1 = none, warm = sunglasses)
   uniform float uTime;
+  uniform float uSliceEnabled;
 
   varying vec3 vNormal;
   varying vec3 vViewDir;
   varying vec3 vObjPos;
+  varying vec3 vWorldPos;
 
   // ---- Noise toolkit ----
 
@@ -147,6 +151,9 @@ export const starFragmentShader = /* glsl */ `
   }
 
   void main() {
+    // Slice: discard fragments behind the z=0 world plane
+    if (uSliceEnabled > 0.5 && vWorldPos.z > 0.0) discard;
+
     float cosTheta = dot(vNormal, vViewDir);
 
     // Limb darkening — quadratic law for more realism

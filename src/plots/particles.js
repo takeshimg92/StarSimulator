@@ -138,7 +138,6 @@ function thermalSpeedForMassAtTemp(massRatio, temp) {
   return Math.min(raw, VISUAL_SPEED_SCALE * 4);
 }
 
-/** Proton thermal speed (for histogram x-axis scaling) */
 /**
  * Update species fractions from evolving composition.
  * Gradually adds/removes particles to match target counts.
@@ -303,6 +302,7 @@ function draw() {
   const histX = PAD;
 
   const vthProton = protonThermalSpeed();
+  if (vthProton < 0.01) return; // guard against zero temperature
   const maxSpeed = vthProton * 3.5;
   const binWidth = maxSpeed / HIST_BINS;
 

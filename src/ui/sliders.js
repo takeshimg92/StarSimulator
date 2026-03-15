@@ -26,8 +26,8 @@ export function createSliders(container, onChange) {
       format: (v) => `${v} R☉`,
     },
     {
-      id: 'hydrogen', label: 'Hydrogen (X)', unit: '',
-      min: 0, max: 0.75, step: 0.01, initial: 0.70,
+      id: 'hydrogen', label: 'Core Hydrogen (X)', unit: '',
+      min: 0, max: 0.75, step: 0.01, initial: 0.34,
       format: (v) => `${(v * 100).toFixed(0)}%`,
     },
   ];
