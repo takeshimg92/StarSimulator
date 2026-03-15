@@ -25,6 +25,11 @@ export function createSliders(container, onChange) {
       min: 0.1, max: 20, step: 0.1, initial: 1.0,
       format: (v) => `${v} R☉`,
     },
+    {
+      id: 'hydrogen', label: 'Hydrogen (X)', unit: '',
+      min: 0, max: 0.75, step: 0.01, initial: 0.70,
+      format: (v) => `${(v * 100).toFixed(0)}%`,
+    },
   ];
 
   const inputs = {};
@@ -147,6 +152,7 @@ export function createSliders(container, onChange) {
       temperature: parseFloat(inputs.temperature.input.value),
       mass: parseFloat(inputs.mass.input.value),
       radius: parseFloat(inputs.radius.input.value),
+      hydrogen: parseFloat(inputs.hydrogen.input.value),
     };
   }
 
@@ -160,7 +166,16 @@ export function createSliders(container, onChange) {
     onChange(getValues());
   }
 
-  return { getValues, setValues };
+  function setDisabled(disabled) {
+    for (const { input } of Object.values(inputs)) {
+      input.disabled = disabled;
+    }
+    // Also disable the MS lock checkbox
+    checkbox.disabled = disabled;
+    container.classList.toggle('sliders-disabled', disabled);
+  }
+
+  return { getValues, setValues, setDisabled };
 }
 
 // Need to import this — adding inline to avoid circular dependency issues

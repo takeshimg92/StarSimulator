@@ -17,6 +17,7 @@
       <div class="nav-links">
         <a href="#" class="nav-link active" data-tab="star">Simulation</a>
         <a href="#" class="nav-link" data-tab="theory">Theory</a>
+        <a href="#" class="nav-link" data-tab="implementation">Implementation</a>
         <a href="#" class="nav-link" data-tab="about">About</a>
       </div>
     </nav>
@@ -25,6 +26,23 @@
     <aside id="left-panel">
       <h2>Parameters</h2>
       <div id="sliders"></div>
+
+      <div id="time-controls">
+        <h2>Time Evolution</h2>
+        <div class="ms-toggle">
+          <input type="checkbox" id="time-toggle" />
+          <label for="time-toggle">Allow passage of time</label>
+          <span class="help-icon" data-tooltip="When enabled, hydrogen fuses into helium over time. The star's composition, temperature, radius, and luminosity evolve accordingly. The star will eventually exhaust its hydrogen fuel.">?</span>
+        </div>
+        <div id="speed-slider-group" class="slider-group" style="display: none;">
+          <div class="slider-label-row">
+            <label for="time-speed">Speed</label>
+            <span class="slider-value" id="speed-value">500 Myr/s</span>
+          </div>
+          <input type="range" id="time-speed" min="1" max="5000" step="1" value="500" />
+        </div>
+      </div>
+
       <div id="display-toggles">
         <h2>Display</h2>
         <div class="ms-toggle">
@@ -42,48 +60,62 @@
     <!-- Center: 3D star viewport -->
     <main id="viewport"></main>
 
+    <!-- Info overlay: bottom-left of viewport -->
+    <div id="info-overlay">
+      <div id="age-display">Age: 4.600 billion years</div>
+      <div id="core-display">
+        <span id="core-temp">T_c: — MK</span>
+        <span id="core-density">ρ_c: — kg/m³</span>
+      </div>
+    </div>
+
     <!-- Right panel -->
     <aside id="right-panel">
       <!-- Star tab (default) -->
       <div id="tab-star" class="tab-content active">
-        <div id="profile-panel" class="mini-panel">
-          <canvas id="profile-canvas"></canvas>
+        <div id="hr-panel" class="mini-panel">
+          <div class="panel-header">
+            <span>H-R Diagram</span>
+            <span class="help-icon" data-tooltip="The Hertzsprung-Russell diagram plots luminosity (total radiated power, in units of the Sun's luminosity L☉ = 3.8 × 10²⁶ W) vs. surface temperature. Hotter stars are on the left, cooler on the right. The shaded band is the main sequence where stars spend ~90% of their lives. The bright dot is your star; the fading trail shows its history as it evolves or as you change parameters.">?</span>
+          </div>
+          <canvas id="hr-canvas"></canvas>
         </div>
-        <div id="div3-panel" class="mini-panel placeholder-panel">
-          <span>Particle Motion</span>
-          <span class="coming-soon">Coming in v0.2</span>
+        <div id="div3-panel" class="mini-panel">
+          <div class="panel-header">
+            <span>Core particle motion</span>
+            <span class="help-icon" data-tooltip="Simulates particles in the stellar core at temperature T_c. Three species are shown: protons H⁺ (blue), helium ⁴He (gold, slower due to 4× mass), and electrons e⁻ (green, much faster due to tiny mass). All follow the Maxwell-Boltzmann distribution. The histogram below shows proton speeds only — electrons are far too fast to fit on the same scale.">?</span>
+          </div>
+          <canvas id="particle-canvas"></canvas>
         </div>
-        <div id="div4-panel" class="mini-panel placeholder-panel">
-          <span>Species Populations</span>
-          <span class="coming-soon">Coming in v0.2</span>
+        <div id="div4-panel" class="mini-panel">
+          <div class="panel-header">
+            <span>Composition</span>
+            <span class="help-icon" data-tooltip="Mass fractions of hydrogen (H), helium (He), and metals (Z). As time passes, hydrogen fuses into helium — H decreases, He increases. When H is nearly exhausted, the star leaves the main sequence.">?</span>
+          </div>
+          <canvas id="species-canvas"></canvas>
         </div>
       </div>
 
       <!-- Theory tab -->
-      <div id="tab-theory" class="tab-content">
-        <div id="equation-panel"></div>
+      <div id="tab-theory" class="tab-content expandable-tab">
+        <button class="expand-btn" title="Expand">&#x26F6;</button>
+        <div id="equation-panel" class="scrollable-panel"></div>
+      </div>
+
+      <!-- Implementation tab -->
+      <div id="tab-implementation" class="tab-content expandable-tab">
+        <button class="expand-btn" title="Expand">&#x26F6;</button>
+        <div id="implementation-panel" class="scrollable-panel"></div>
       </div>
 
       <!-- About tab -->
       <div id="tab-about" class="tab-content">
         <div id="about-panel">
-          <h3>Alessandro Morita</h3>
-          <p class="about-tagline">Enjoying the thermodynamic limit</p>
+          <h3>Alessandro Morita Gagliardi</h3>
+          <p class="about-tagline">Hello there!</p>
           <p>
-            Physics and data science professional currently leading R&amp;D teams
-            in Tokyo at Braid, focusing on physics solvers, optimization algorithms,
-            and machine learning.
+            Physics and data science professional currently living in Tokyo. Feel free to share any feedback you may have, be it bugs, physics inaccuracies, UI/UX issues, or suggestions for new features. 
           </p>
-          <p>
-            Previously a data science team lead at Experian DataLabs (S&atilde;o Paulo)
-            and a management consultant and data scientist at Boston Consulting Group.
-          </p>
-          <h4>Education</h4>
-          <ul>
-            <li>MSc Theoretical Physics, Perimeter Institute</li>
-            <li>Engineering &amp; Physics, &Eacute;cole Polytechnique</li>
-            <li>BSc Physics, University of S&atilde;o Paulo</li>
-          </ul>
           <h4>Links</h4>
           <div class="about-links">
             <a href="https://takeshimg92.github.io" target="_blank">Blog</a>

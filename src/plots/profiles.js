@@ -43,10 +43,8 @@ export function drawProfiles(profiles) {
   const plotW = w - pad.left - pad.right;
   const plotH = h - pad.top - pad.bottom;
 
-  // Clear
+  // Clear — fully transparent so the starfield/glow shows through
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = 'rgba(4, 4, 18, 0.5)';
-  ctx.fillRect(0, 0, w, h);
 
   const maxT = Math.max(...profiles.T);
   const maxRho = Math.max(...profiles.rho);

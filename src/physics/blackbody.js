@@ -38,9 +38,11 @@ export function temperatureToRGB(kelvin) {
   let gg = Math.min(1, Math.max(0, g / 255));
   let bb = Math.min(1, Math.max(0, b / 255));
 
-  // Boost saturation — pull channels away from gray toward dominant hue
+  // Mild saturation boost for educational visibility.
+  // More boost at cool temps (where colors are richer),
+  // less at hot temps (which should stay near blue-white).
   const avg = (rr + gg + bb) / 3;
-  const boost = 1.8;
+  const boost = kelvin < 6000 ? 1.4 : 1.15;
   rr = Math.min(1, Math.max(0, avg + (rr - avg) * boost));
   gg = Math.min(1, Math.max(0, avg + (gg - avg) * boost));
   bb = Math.min(1, Math.max(0, avg + (bb - avg) * boost));

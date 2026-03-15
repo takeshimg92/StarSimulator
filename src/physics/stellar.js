@@ -95,4 +95,5 @@ export const defaults = {
   mass: 1.0,        // M☉
   radius: 1.0,      // R☉
   temperature: 5778, // K
+  hydrogen: 0.70,   // X
 };
