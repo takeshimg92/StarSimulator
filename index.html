@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Star Simulator</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Left panel: sliders -->
+    <aside id="left-panel">
+      <h2>Parameters</h2>
+      <div id="sliders"></div>
+      <div id="display-toggles">
+        <h2>Display</h2>
+        <div class="ms-toggle">
+          <input type="checkbox" id="spots-toggle" checked />
+          <label for="spots-toggle">Show Sunspots</label>
+        </div>
+        <div class="ms-toggle">
+          <input type="checkbox" id="sunglasses-toggle" />
+          <label for="sunglasses-toggle">Sunglasses</label>
+        </div>
+      </div>
+      <button id="reset-btn">Reset to Sun</button>
+    </aside>
+
+    <!-- Center: 3D star viewport -->
+    <main id="viewport"></main>
+
+    <!-- Right panels -->
+    <aside id="right-panel">
+      <div id="profile-panel" class="mini-panel">
+        <canvas id="profile-canvas"></canvas>
+      </div>
+      <div id="div3-panel" class="mini-panel placeholder-panel">
+        <span>Particle Motion</span>
+        <span class="coming-soon">Coming in v0.2</span>
+      </div>
+      <div id="div4-panel" class="mini-panel placeholder-panel">
+        <span>Species Populations</span>
+        <span class="coming-soon">Coming in v0.2</span>
+      </div>
+    </aside>
+
+    <!-- Bottom right: equations -->
+    <div id="equation-panel"></div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
