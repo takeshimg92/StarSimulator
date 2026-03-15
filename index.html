@@ -4,10 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Star Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
   <div id="app">
+    <!-- Top nav -->
+    <nav id="top-nav">
+      <span class="nav-title">Star Simulator</span>
+      <div class="nav-links">
+        <a href="#" class="nav-link active" data-tab="star">Simulation</a>
+        <a href="#" class="nav-link" data-tab="theory">Theory</a>
+        <a href="#" class="nav-link" data-tab="about">About</a>
+      </div>
+    </nav>
+
     <!-- Left panel: sliders -->
     <aside id="left-panel">
       <h2>Parameters</h2>
@@ -29,23 +42,57 @@
     <!-- Center: 3D star viewport -->
     <main id="viewport"></main>
 
-    <!-- Right panels -->
+    <!-- Right panel -->
     <aside id="right-panel">
-      <div id="profile-panel" class="mini-panel">
-        <canvas id="profile-canvas"></canvas>
+      <!-- Star tab (default) -->
+      <div id="tab-star" class="tab-content active">
+        <div id="profile-panel" class="mini-panel">
+          <canvas id="profile-canvas"></canvas>
+        </div>
+        <div id="div3-panel" class="mini-panel placeholder-panel">
+          <span>Particle Motion</span>
+          <span class="coming-soon">Coming in v0.2</span>
+        </div>
+        <div id="div4-panel" class="mini-panel placeholder-panel">
+          <span>Species Populations</span>
+          <span class="coming-soon">Coming in v0.2</span>
+        </div>
       </div>
-      <div id="div3-panel" class="mini-panel placeholder-panel">
-        <span>Particle Motion</span>
-        <span class="coming-soon">Coming in v0.2</span>
+
+      <!-- Theory tab -->
+      <div id="tab-theory" class="tab-content">
+        <div id="equation-panel"></div>
       </div>
-      <div id="div4-panel" class="mini-panel placeholder-panel">
-        <span>Species Populations</span>
-        <span class="coming-soon">Coming in v0.2</span>
+
+      <!-- About tab -->
+      <div id="tab-about" class="tab-content">
+        <div id="about-panel">
+          <h3>Alessandro Morita</h3>
+          <p class="about-tagline">Enjoying the thermodynamic limit</p>
+          <p>
+            Physics and data science professional currently leading R&amp;D teams
+            in Tokyo at Braid, focusing on physics solvers, optimization algorithms,
+            and machine learning.
+          </p>
+          <p>
+            Previously a data science team lead at Experian DataLabs (S&atilde;o Paulo)
+            and a management consultant and data scientist at Boston Consulting Group.
+          </p>
+          <h4>Education</h4>
+          <ul>
+            <li>MSc Theoretical Physics, Perimeter Institute</li>
+            <li>Engineering &amp; Physics, &Eacute;cole Polytechnique</li>
+            <li>BSc Physics, University of S&atilde;o Paulo</li>
+          </ul>
+          <h4>Links</h4>
+          <div class="about-links">
+            <a href="https://takeshimg92.github.io" target="_blank">Blog</a>
+            <a href="https://github.com/takeshimg92" target="_blank">GitHub</a>
+            <a href="https://linkedin.com/in/atmg92" target="_blank">LinkedIn</a>
+          </div>
+        </div>
       </div>
     </aside>
-
-    <!-- Bottom right: equations -->
-    <div id="equation-panel"></div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

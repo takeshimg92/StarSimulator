@@ -1,12 +1,31 @@
 /**
  * Draws T(r) and ρ(r) profiles on a Canvas 2D context.
+ * Handles high-DPI displays by scaling the canvas backing store.
  */
 
-let canvas, ctx;
+let canvas, ctx, dpr;
 
 export function initProfilePlot(canvasElement) {
   canvas = canvasElement;
   ctx = canvas.getContext('2d');
+  dpr = window.devicePixelRatio || 1;
+}
+
+/**
+ * Set canvas resolution to match CSS size × devicePixelRatio.
+ */
+export function resizeProfileCanvas() {
+  if (!canvas) return;
+  const container = canvas.parentElement;
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  dpr = window.devicePixelRatio || 1;
+
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 /**
@@ -16,19 +35,19 @@ export function initProfilePlot(canvasElement) {
 export function drawProfiles(profiles) {
   if (!ctx) return;
 
-  const w = canvas.width;
-  const h = canvas.height;
+  // Use CSS dimensions for layout (ctx is already scaled by dpr)
+  const container = canvas.parentElement;
+  const w = container.clientWidth;
+  const h = container.clientHeight;
   const pad = { top: 30, right: 20, bottom: 35, left: 45 };
   const plotW = w - pad.left - pad.right;
   const plotH = h - pad.top - pad.bottom;
 
-  // Clear with transparency so starfield shows through
+  // Clear
   ctx.clearRect(0, 0, w, h);
-  // Subtle semi-transparent background for readability
   ctx.fillStyle = 'rgba(4, 4, 18, 0.5)';
   ctx.fillRect(0, 0, w, h);
 
-  // Normalize values for plotting
   const maxT = Math.max(...profiles.T);
   const maxRho = Math.max(...profiles.rho);
   const n = profiles.r.length;
@@ -44,7 +63,6 @@ export function drawProfiles(profiles) {
     ctx.stroke();
   }
 
-  // Draw curve helper
   function drawCurve(values, maxVal, color) {
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;

@@ -34,9 +34,16 @@ export function temperatureToRGB(kelvin) {
     b = 138.5177312231 * Math.log(temp - 10) - 305.0447927307;
   }
 
-  return {
-    r: Math.min(1, Math.max(0, r / 255)),
-    g: Math.min(1, Math.max(0, g / 255)),
-    b: Math.min(1, Math.max(0, b / 255)),
-  };
+  let rr = Math.min(1, Math.max(0, r / 255));
+  let gg = Math.min(1, Math.max(0, g / 255));
+  let bb = Math.min(1, Math.max(0, b / 255));
+
+  // Boost saturation — pull channels away from gray toward dominant hue
+  const avg = (rr + gg + bb) / 3;
+  const boost = 1.8;
+  rr = Math.min(1, Math.max(0, avg + (rr - avg) * boost));
+  gg = Math.min(1, Math.max(0, avg + (gg - avg) * boost));
+  bb = Math.min(1, Math.max(0, avg + (bb - avg) * boost));
+
+  return { r: rr, g: gg, b: bb };
 }

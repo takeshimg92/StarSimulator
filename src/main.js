@@ -1,11 +1,10 @@
 import { initRenderer, updateStarAppearance, setSpotsVisible, setSunglasses } from './star/renderer.js';
 import { computeProfiles, defaults } from './physics/stellar.js';
 import { createSliders } from './ui/sliders.js';
-import { initProfilePlot, drawProfiles } from './plots/profiles.js';
+import { initProfilePlot, resizeProfileCanvas, drawProfiles } from './plots/profiles.js';
 import { initEquationDisplay } from './ui/equations.js';
 import 'katex/dist/katex.min.css';
 
-// --- State ---
 let sliderControls;
 
 function onParametersChanged({ mass, radius, temperature }) {
@@ -14,26 +13,45 @@ function onParametersChanged({ mass, radius, temperature }) {
   drawProfiles(profiles);
 }
 
-// --- Init ---
+function initTabs() {
+  const links = document.querySelectorAll('.nav-link');
+  const contents = document.querySelectorAll('.tab-content');
+
+  links.forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const tabId = link.dataset.tab;
+      links.forEach(l => l.classList.remove('active'));
+      contents.forEach(c => c.classList.remove('active'));
+      link.classList.add('active');
+      document.getElementById(`tab-${tabId}`).classList.add('active');
+
+      if (tabId === 'star') {
+        resizeProfileCanvas();
+        onParametersChanged(sliderControls.getValues());
+      }
+    });
+  });
+}
+
 function init() {
-  // 3D star viewport
   const viewport = document.getElementById('viewport');
   initRenderer(viewport);
 
-  // Sliders
   const sliderPanel = document.getElementById('sliders');
   sliderControls = createSliders(sliderPanel, onParametersChanged);
 
-  // Profile plot — set canvas resolution to match CSS size
+  // Profile plot with HiDPI support
   const profileCanvas = document.getElementById('profile-canvas');
-  const profileContainer = document.getElementById('profile-panel');
-  profileCanvas.width = profileContainer.clientWidth;
-  profileCanvas.height = profileContainer.clientHeight;
   initProfilePlot(profileCanvas);
+  resizeProfileCanvas();
 
-  // Equation display
+  // Equation display (now in Theory tab)
   const eqPanel = document.getElementById('equation-panel');
   initEquationDisplay(eqPanel);
+
+  // Tabs
+  initTabs();
 
   // Display toggles
   document.getElementById('spots-toggle').addEventListener('change', (e) => {
@@ -48,13 +66,12 @@ function init() {
     sliderControls.setValues(defaults);
   });
 
-  // Initial render with default values
+  // Initial render
   onParametersChanged(sliderControls.getValues());
 
-  // Resize profile canvas on window resize
+  // Resize handling
   window.addEventListener('resize', () => {
-    profileCanvas.width = profileContainer.clientWidth;
-    profileCanvas.height = profileContainer.clientHeight;
+    resizeProfileCanvas();
     onParametersChanged(sliderControls.getValues());
   });
 }

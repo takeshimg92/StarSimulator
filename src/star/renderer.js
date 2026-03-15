@@ -187,7 +187,7 @@ function animate() {
  */
 export function updateStarAppearance(temperature, radius, luminosity) {
   const rgb = temperatureToRGB(temperature);
-  const newScale = Math.pow(Math.max(radius, 0.05), 0.4);
+  const newScale = 0.5 * Math.pow(Math.max(radius, 0.05), 0.4);
 
   // Detect if there's a meaningful change → trigger wobble
   const scaleDelta = Math.abs(newScale - target.scale);

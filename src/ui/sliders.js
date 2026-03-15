@@ -43,6 +43,14 @@ export function createSliders(container, onChange) {
   toggleLabel.htmlFor = 'ms-lock';
   toggleLabel.textContent = 'Lock to Main Sequence';
 
+  const helpIcon = document.createElement('span');
+  helpIcon.className = 'help-icon';
+  helpIcon.textContent = '?';
+  helpIcon.setAttribute('data-tooltip',
+    'The main sequence is the band on the Hertzsprung\u2013Russell diagram where stars spend ~90% of their lives, fusing hydrogen into helium. Along it, a star\u2019s mass determines its temperature, radius, and luminosity. Locking to the main sequence couples these quantities via empirical scaling relations.'
+  );
+  toggleLabel.appendChild(helpIcon);
+
   checkbox.addEventListener('change', () => {
     msLocked = checkbox.checked;
     // When re-locking, snap to MS from current mass
