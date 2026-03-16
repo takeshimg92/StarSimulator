@@ -8,3 +8,5 @@ CLAUDE.md
 data/mist_raw/
 data/*.txz
 data/*.py
+.vercel
+.env*.local
