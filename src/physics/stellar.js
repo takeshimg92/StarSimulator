@@ -115,7 +115,4 @@ export function computeProfiles(mass, radius, tEff, muZone = 0.62) {
  */
 export const defaults = {
   mass: 1.0,        // M☉
-  radius: 1.0,      // R☉
-  temperature: 5778, // K
-  hydrogen: 0.34,   // X_core (present-day Sun)
 };

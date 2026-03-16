@@ -1,23 +1,46 @@
-import { initRenderer, updateStarAppearance, setSunglasses, freezeStar, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup } from './star/renderer.js';
+import { initRenderer, updateStarAppearance, setSunglasses, freezeStar, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup, getScaleBarInfo, setAutoZoom, setOnFrameCallback, triggerEndOfLife, getZoneStructure, getRemnantType } from './star/renderer.js';
 import { computeProfiles, defaults } from './physics/stellar.js';
 import { createSliders } from './ui/sliders.js';
 import { initHRDiagram, resizeHRCanvas, updateHR, clearHRTrail } from './plots/hrDiagram.js';
-import { initParticleSim, resizeParticleCanvas, updateParticleTemp, updateParticleComposition } from './plots/particles.js';
+import { initParticleSim, resizeParticleCanvas, updateParticleTemp, updateParticleComposition, setRemnantState } from './plots/particles.js';
 import { initSpeciesPlot, resizeSpeciesCanvas, drawSpecies, clearMuHistory } from './plots/species.js';
 import { initEquationDisplay } from './ui/equations.js';
 import { initImplementationPanel } from './ui/implementation.js';
 import * as evolution from './physics/evolution.js';
+import { loadTracks } from './physics/mistTracks.js';
 import * as THREE from 'three';
 import 'katex/dist/katex.min.css';
 
 let sliderControls;
-let ageDisplay, coreTempDisplay, coreDensityDisplay;
+let ageDisplay, coreTempDisplay, coreDensityDisplay, starScaleDisplay;
 let lastFrameTime = 0;
 let lastCompositionUpdate = 0;
 const COMPOSITION_UPDATE_INTERVAL = 2000;
 let lastProfiles = null; // cached for hover tooltip
 
 let suppressHydrogenSync = false;
+
+function updateScaleBar() {
+  const info = getScaleBarInfo();
+  if (!info) return;
+  const line = document.getElementById('scale-bar-line');
+  const label = document.getElementById('scale-bar-label');
+  if (line && label) {
+    line.style.width = `${Math.round(info.suggestedWidth)}px`;
+    label.textContent = info.suggestedLabel;
+  }
+}
+
+function updateAgeDisplay() {
+  const ageMyr = evolution.getAge() / 1e6;
+  const ageGyr = evolution.getAge() / 1e9;
+  const phaseName = evolution.getPhaseName();
+  const ageStr = ageMyr < 100
+    ? `Age: ${ageMyr.toFixed(2)} million years`
+    : `Age: ${ageGyr.toFixed(3)} billion years`;
+  ageDisplay.innerHTML = ageStr +
+    (phaseName ? ` <span style="color:rgba(255,200,100,0.5);font-size:11px">&middot; ${phaseName}</span>` : '');
+}
 
 function onParametersChanged({ mass, radius, temperature, hydrogen }) {
   // Sync hydrogen slider to evolution only if user manually changed it
@@ -30,15 +53,32 @@ function onParametersChanged({ mass, radius, temperature, hydrogen }) {
   const q = evolution.getCoreRadius();
   const profiles = computeProfiles(mass, radius, temperature, { mu_core: mu.mu_core, mu_env: mu.mu_env, q });
   lastProfiles = profiles;
-  setCrossSectionProfiles(profiles, mass);
+  const comp = evolution.getComposition();
+  setCrossSectionProfiles(profiles, mass, {
+    heCoreM: comp.heCoreM || 0,
+    phase: evolution.getPhase(),
+    Xc: comp.X_core,
+    Yc: comp.Y_core,
+  });
   evolution.setLuminosity(profiles.L);
   updateStarAppearance(temperature, radius, profiles.L);
   updateParticleTemp(profiles.Tc);
   updateHR(temperature, profiles.L);
 
-  const comp = evolution.getComposition();
   updateParticleComposition(comp.X_core, comp.Y_core);
   drawSpecies(comp, mu, evolution.getAge() / 1e9);
+
+  // Update scale display
+  if (starScaleDisplay) {
+    const L_sun = 3.828e26;
+    const Lsolar = profiles.L / L_sun;
+    const rStr = radius >= 10 ? `${Math.round(radius)}` : `${radius.toFixed(1)}`;
+    const lStr = Lsolar >= 100 ? `${Math.round(Lsolar)}` : Lsolar >= 1 ? `${Lsolar.toFixed(1)}` : `${Lsolar.toFixed(3)}`;
+    starScaleDisplay.innerHTML = `R = ${rStr} R&#9737; &middot; T = ${Math.round(temperature)} K &middot; L = ${lStr} L&#9737;`;
+  }
+
+  // Update scale bar
+  updateScaleBar();
 
   // Update core info display
   if (coreTempDisplay) {
@@ -97,41 +137,180 @@ function initExpandButtons() {
   });
 }
 
+let timeInitialized = false;
+let lastInitMass = null;
+let scrubbing = false; // true while user is dragging the time scrubber
+
+// Log-scale speed slider: slider position 0–1000 maps to 0.1–1000 Myr/s
+// position = 0 → 0.1 Myr/s, position = 500 → 10 Myr/s, position = 1000 → 1000 Myr/s
+const SPEED_LOG_MIN = Math.log10(0.1); // -1
+const SPEED_LOG_MAX = Math.log10(1000); // 3
+function sliderToSpeed(pos) {
+  const frac = pos / 1000;
+  return Math.pow(10, SPEED_LOG_MIN + frac * (SPEED_LOG_MAX - SPEED_LOG_MIN));
+}
+function speedToSlider(speed) {
+  const logS = Math.log10(Math.max(0.1, speed));
+  return Math.round(((logS - SPEED_LOG_MIN) / (SPEED_LOG_MAX - SPEED_LOG_MIN)) * 1000);
+}
+function formatSpeed(myrPerSec) {
+  if (myrPerSec >= 1000) return `${(myrPerSec / 1000).toFixed(1)} Gyr/s`;
+  if (myrPerSec >= 10) return `${Math.round(myrPerSec)} Myr/s`;
+  if (myrPerSec >= 1) return `${myrPerSec.toFixed(1)} Myr/s`;
+  return `${(myrPerSec * 1000).toFixed(0)} kyr/s`;
+}
+
 function initTimeControls() {
-  const timeToggle = document.getElementById('time-toggle');
+  const playBtn = document.getElementById('play-pause-btn');
   const speedSlider = document.getElementById('time-speed');
   const speedValue = document.getElementById('speed-value');
-  const speedGroup = document.getElementById('speed-slider-group');
+  const scrubber = document.getElementById('time-scrubber');
+  const scrubberLabel = document.getElementById('scrubber-label');
 
-  timeToggle.addEventListener('change', () => {
-    if (timeToggle.checked) {
-      const mass = sliderControls.getValues().mass;
-      evolution.setInitialMass(mass);
+  function ensureInitialized() {
+    const mass = sliderControls.getValues().mass;
+    if (!timeInitialized || mass !== lastInitMass) {
+      evolution.initFromTrack(mass);
+      lastInitMass = mass;
+      timeInitialized = true;
 
-      // Adaptive speed: aim for ~30 seconds of wall time to deplete hydrogen.
-      // MS lifetime ≈ 10 Gyr × (M/M☉)^(-2.5) roughly.
-      // Speed = lifetime / 30s, in Myr/s.
-      const lifetimeMyr = 10000 * Math.pow(mass, -2.5);
-      const adaptiveSpeed = Math.max(1, Math.min(5000, Math.round(lifetimeMyr / 30)));
-      speedSlider.value = adaptiveSpeed;
-      speedValue.textContent = `${adaptiveSpeed} Myr/s`;
+      const lifetimeMyr = 12000 * Math.pow(mass, -2.5);
+      const adaptiveSpeed = Math.max(0.1, Math.min(1000, lifetimeMyr / 60));
+      speedSlider.value = speedToSlider(adaptiveSpeed);
+      speedValue.textContent = formatSpeed(adaptiveSpeed);
       evolution.setSpeed(adaptiveSpeed);
-      setStarfieldSpeed(0.0001 * adaptiveSpeed);
-    } else {
-      setStarfieldSpeed(0);
     }
-    evolution.setRunning(timeToggle.checked);
-    sliderControls.setDisabled(timeToggle.checked);
-    speedGroup.style.display = timeToggle.checked ? 'block' : 'none';
+  }
+
+  function updateScrubberPosition() {
+    const minAge = evolution.getTrackMinAge();
+    const maxAge = evolution.getTrackMaxAge();
+    const age = evolution.getAge();
+    const frac = Math.max(0, Math.min(1, (age - minAge) / (maxAge - minAge)));
+    scrubber.value = Math.round(frac * 1000);
+
+    const ageMyr = age / 1e6;
+    const ageGyr = age / 1e9;
+    scrubberLabel.textContent = ageMyr < 100
+      ? `${ageMyr.toFixed(1)} Myr`
+      : `${ageGyr.toFixed(2)} Gyr`;
+  }
+
+  function scrubToValue() {
+    ensureInitialized();
+    const frac = parseFloat(scrubber.value) / 1000;
+    const minAge = evolution.getTrackMinAge();
+    const maxAge = evolution.getTrackMaxAge();
+    const newAge = minAge + frac * (maxAge - minAge);
+    evolution.setAge(newAge);
+
+    // Update the star at this age
+    const result = evolution.lookupCurrentState();
+
+    if (result && result.dead) {
+      // Reached end of track — trigger death
+      const mass = result.mass;
+      let fate;
+      if (mass >= 25) {
+        fate = 'Core collapse → supernova → black hole';
+        setRemnantState('blackhole');
+      } else if (mass >= 8) {
+        fate = 'Core collapse → supernova → neutron star';
+        setRemnantState('neutronstar');
+      } else {
+        fate = 'Envelope ejected → planetary nebula → white dwarf';
+        setRemnantState('whitedwarf');
+      }
+      triggerEndOfLife(mass);
+      updateAgeDisplay();
+      const ageMyr = result.age / 1e6;
+      const ageGyr = result.age / 1e9;
+      const ageStr = ageMyr < 100
+        ? `Age: ${ageMyr.toFixed(2)} million years`
+        : `Age: ${ageGyr.toFixed(3)} billion years`;
+      ageDisplay.innerHTML = ageStr +
+        `<br><span style="font-size:11px;color:rgba(255,200,100,0.5)">${fate}</span>`;
+      updateScrubberPosition();
+      return;
+    }
+
+    // Not dead — unfreeze if coming back from a dead state
+    unfreezeStar();
+    setRemnantState(null);
+
+    if (result) {
+      suppressHydrogenSync = true;
+      onParametersChanged({
+        mass: result.mass,
+        temperature: result.temperature,
+        radius: result.radius,
+        hydrogen: result.X,
+      });
+      suppressHydrogenSync = false;
+      drawSpecies(evolution.getComposition(), evolution.getMu(), evolution.getAge() / 1e9);
+    }
+    updateAgeDisplay();
+    updateScrubberPosition();
+  }
+
+  // Play/pause button
+  playBtn.addEventListener('click', () => {
+    if (evolution.isRunning()) {
+      evolution.setRunning(false);
+      setAutoZoom(false);
+      playBtn.innerHTML = '&#9654;';
+      playBtn.classList.remove('playing');
+      setStarfieldSpeed(0);
+      sliderControls.setDisabled(false);
+
+    } else {
+      ensureInitialized();
+      evolution.setRunning(true);
+      setAutoZoom(true);
+      playBtn.innerHTML = '&#9646;&#9646;';
+      playBtn.classList.add('playing');
+      sliderControls.setDisabled(true);
+
+      setStarfieldSpeed(0.0001 * evolution.getSpeed());
+      updateScrubberPosition();
+    }
   });
 
-  speedSlider.addEventListener('input', () => {
-    const val = parseFloat(speedSlider.value);
-    evolution.setSpeed(val);
-    speedValue.textContent = `${val} Myr/s`;
-    // Starfield rotates opposite to star, faster with time speed
-    setStarfieldSpeed(0.0001 * val);
+  // Time scrubber — drag to any point in the star's life
+  scrubber.addEventListener('input', () => {
+    scrubbing = true;
+    // Pause while scrubbing
+    if (evolution.isRunning()) {
+      evolution.setRunning(false);
+      setAutoZoom(false);
+      playBtn.innerHTML = '&#9654;';
+      playBtn.classList.remove('playing');
+      setStarfieldSpeed(0);
+      sliderControls.setDisabled(false);
+
+    }
+    scrubToValue();
   });
+
+  scrubber.addEventListener('change', () => {
+    scrubbing = false;
+  });
+
+  // Speed slider (logarithmic)
+  speedSlider.addEventListener('input', () => {
+    const speed = sliderToSpeed(parseFloat(speedSlider.value));
+    evolution.setSpeed(speed);
+    speedValue.textContent = formatSpeed(speed);
+    setStarfieldSpeed(0.0001 * speed);
+  });
+
+  // Slow-motion toggle
+  document.getElementById('slowmo-toggle').addEventListener('change', (e) => {
+    evolution.setSlowMotion(e.target.checked);
+  });
+
+  // Expose updateScrubberPosition for the time loop
+  window._updateScrubber = updateScrubberPosition;
 }
 
 function timeEvolutionLoop(now) {
@@ -149,16 +328,22 @@ function timeEvolutionLoop(now) {
   const result = evolution.step(dt, mass);
   if (!result) return;
 
+  updateAgeDisplay();
+  const phaseStr = result.phaseName || '';
+  const ageMyr = result.age / 1e6;
   const ageGyr = result.age / 1e9;
-  ageDisplay.textContent = `Age: ${ageGyr.toFixed(3)} billion years`;
+  const ageStr = ageMyr < 100
+    ? `Age: ${ageMyr.toFixed(2)} million years`
+    : `Age: ${ageGyr.toFixed(3)} billion years`;
 
-  // Suppress hydrogen sync so the rounded slider value doesn't reset evolution state
+  // Drive the star appearance directly from the MIST result
+  // (don't go through the slider — it only has mass now)
   suppressHydrogenSync = true;
-  sliderControls.setValues({
-    temperature: Math.round(result.temperature / 100) * 100,
-    radius: Math.round(result.radius * 10) / 10,
+  onParametersChanged({
     mass: result.mass,
-    hydrogen: Math.round(result.X * 100) / 100,
+    temperature: result.temperature,
+    radius: result.radius,
+    hydrogen: result.X,
   });
   suppressHydrogenSync = false;
 
@@ -171,22 +356,62 @@ function timeEvolutionLoop(now) {
 
   drawSpecies(evolution.getComposition(), evolution.getMu(), evolution.getAge() / 1e9);
 
+  // Sync scrubber position during playback
+  if (window._updateScrubber && !scrubbing) window._updateScrubber();
+
   // Refresh hover tooltip with updated profiles (mouse may be stationary)
   refreshTooltip();
 
   if (result.dead) {
     evolution.setRunning(false);
-    document.getElementById('time-toggle').checked = false;
-    document.getElementById('speed-slider-group').style.display = 'none';
+    setAutoZoom(false);
+    document.getElementById('play-pause-btn').innerHTML = '&#9654;';
+    document.getElementById('play-pause-btn').classList.remove('playing');
     setStarfieldSpeed(0);
-    ageDisplay.innerHTML = `Age: ${ageGyr.toFixed(3)} billion years — Hydrogen exhausted!<br><span style="font-size:11px;color:rgba(255,200,100,0.5)">Post-main-sequence evolution not yet implemented</span>`;
+    sliderControls.setDisabled(false);
 
-    // Freeze the star in its last state
-    freezeStar();
+    // Fate depends on mass
+    const mass = result.mass;
+    let fate;
+    if (mass < 8) {
+      fate = 'Envelope ejected → planetary nebula → white dwarf';
+    } else if (mass < 25) {
+      fate = 'Core collapse → supernova → neutron star';
+    } else {
+      fate = 'Core collapse → supernova → black hole';
+    }
+
+    ageDisplay.innerHTML = ageStr +
+      `<br><span style="font-size:11px;color:rgba(255,200,100,0.5)">${phaseStr} &middot; ${fate}</span>`;
+
+    // Trigger end-of-life visual effect
+    triggerEndOfLife(mass);
+
+    // Set particle sim to remnant state
+    if (mass >= 25) {
+      setRemnantState('blackhole');
+    } else if (mass >= 8) {
+      setRemnantState('neutronstar');
+    } else {
+      setRemnantState('whitedwarf');
+    }
   }
 }
 
-function init() {
+async function init() {
+  // Load MIST tracks in background (non-blocking — app works without them)
+  loadTracks().then(() => {
+    console.log('MIST tracks loaded');
+    // Brief flash on the age display to confirm
+    if (ageDisplay) {
+      const prev = ageDisplay.innerHTML;
+      ageDisplay.innerHTML = prev + ' <span style="color:rgba(100,255,100,0.5);font-size:10px">&#x2713; Evolution tracks loaded</span>';
+      setTimeout(() => { ageDisplay.innerHTML = prev; }, 3000);
+    }
+  }).catch(err => {
+    console.warn('MIST tracks not available, using analytical model:', err);
+  });
+
   const viewport = document.getElementById('viewport');
   initRenderer(viewport);
 
@@ -219,6 +444,7 @@ function init() {
   // Time controls
   initTimeControls();
   ageDisplay = document.getElementById('age-display');
+  starScaleDisplay = document.getElementById('star-scale');
   coreTempDisplay = document.getElementById('core-temp');
   coreDensityDisplay = document.getElementById('core-density');
 
@@ -236,21 +462,30 @@ function init() {
     clearHRTrail();
     clearMuHistory();
     unfreezeStar();
+    setRemnantState(null);
     setStarfieldSpeed(0);
     sliderControls.setDisabled(false);
     sliderControls.setValues(defaults);
-    ageDisplay.textContent = 'Age: 4.600 billion years';
-    document.getElementById('time-toggle').checked = false;
-    document.getElementById('speed-slider-group').style.display = 'none';
+    updateAgeDisplay();
+    document.getElementById('play-pause-btn').innerHTML = '&#9654;';
+    document.getElementById('play-pause-btn').classList.remove('playing');
+    timeInitialized = false;
+    lastInitMass = null;
+    document.getElementById('time-scrubber').value = 0;
+    document.getElementById('scrubber-label').textContent = '';
     drawSpecies(evolution.getComposition(), evolution.getMu(), evolution.getAge() / 1e9);
   });
 
   // Initial render
   onParametersChanged(sliderControls.getValues());
+  updateAgeDisplay();
 
   // Tooltips
   initTooltips();
   initStarHover(viewport);
+
+  // Update scale bar every frame (responds to manual zoom too)
+  setOnFrameCallback(updateScaleBar);
 
   // Start time evolution loop
   lastFrameTime = performance.now();
@@ -289,21 +524,46 @@ function computePPvsCNO(T_kelvin) {
  * massive stars (M > 1.3 M☉) have convective cores.
  */
 function getZoneLabel(rFrac, mass) {
-  const q = evolution.getCoreRadius();
-  if (mass >= 1.3) {
-    // Massive star: convective core, radiative envelope
-    const convOuter = Math.min(0.5, 0.2 + 0.1 * (mass - 1.3));
-    if (rFrac <= convOuter) return 'Convective core';
-    return 'Radiative envelope';
+  const comp = evolution.getComposition();
+  const evoState = {
+    heCoreM: comp.heCoreM || 0,
+    phase: evolution.getPhase(),
+    Xc: comp.X_core,
+    Yc: comp.Y_core,
+  };
+  const zone = getZoneStructure(mass, evoState);
+
+  if (rFrac <= zone.coreR) {
+    // Check if core is convective
+    if (zone.coreConvective && zone.convInner === 0) return 'Convective core';
+    return 'Core (radiative)';
   }
-  // Solar-type: radiative core, radiative mid-zone, convective envelope
-  const envConvR = Math.max(0.4, 0.7 - 0.2 * (1.0 - mass));
-  if (rFrac <= q) return 'Core (radiative)';
-  if (rFrac <= envConvR) return 'Radiative zone';
-  return 'Convective envelope';
+
+  // Check for shell burning region
+  for (const shell of zone.shells || []) {
+    if (Math.abs(rFrac - shell.rFrac) < shell.width * 2) {
+      return shell.color === 'H' ? 'H-shell burning' : 'He-shell burning';
+    }
+  }
+
+  // Convective or radiative?
+  if (zone.coreConvective) {
+    if (rFrac <= zone.convOuter) return 'Convective core';
+    return 'Radiative envelope';
+  } else {
+    if (rFrac >= zone.convInner && rFrac <= zone.convOuter) return 'Convective envelope';
+    if (rFrac < zone.convInner) return 'Radiative zone';
+    return 'Envelope';
+  }
 }
 
 function formatTooltip(rFrac, profiles, sliderTemp, mass) {
+  // Remnant states: no meaningful interior physics
+  const rt = getRemnantType();
+  if (rt === 'blackhole') return 'Black hole &middot; singularity<br>T = ? &middot; &rho; = ?';
+  if (rt === 'neutronstar') return 'Neutron star &middot; degenerate matter<br>T = ? &middot; &rho; &sim; 10<sup>17</sup> kg/m&sup3;';
+  if (rt === 'whitedwarf') return 'White dwarf &middot; electron-degenerate<br>T = ? &middot; &rho; &sim; 10<sup>9</sup> kg/m&sup3;';
+
   const zone = getZoneLabel(rFrac, mass);
 
   const idx = Math.min(

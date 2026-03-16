@@ -1,192 +1,95 @@
-import { radiusFromMass, temperatureFromMass, massFromTemperature } from '../physics/scaling.js';
+import { getStateAtAge, isLoaded as mistLoaded, getZAMSAge } from '../physics/mistTracks.js';
+import { radiusFromMass, temperatureFromMass } from '../physics/scaling.js';
 
 /**
- * Creates slider controls with main-sequence coupling toggle.
- *
- * When "Lock to Main Sequence" is on (default):
- *   Mass drives T and R. T infers mass and drives R. R infers mass and drives T.
- * When off:
- *   All sliders are independent.
+ * Creates a single mass slider. When mass changes, the star's appearance
+ * is derived from the MIST track at the current age (or ZAMS scaling relations
+ * as fallback).
  */
 export function createSliders(container, onChange) {
-  const sliderDefs = [
-    {
-      id: 'temperature', label: 'Temperature', unit: 'K',
-      min: 2500, max: 40000, step: 100, initial: 5778,
-      format: (v) => `${v} K`,
-    },
-    {
-      id: 'mass', label: 'Mass', unit: 'M☉',
-      min: 0.1, max: 50, step: 0.1, initial: 1.0,
-      format: (v) => `${v} M☉`,
-    },
-    {
-      id: 'radius', label: 'Radius', unit: 'R☉',
-      min: 0.1, max: 20, step: 0.1, initial: 1.0,
-      format: (v) => `${v} R☉`,
-    },
-    {
-      id: 'hydrogen', label: 'Core Hydrogen (X)', unit: '',
-      min: 0, max: 0.75, step: 0.01, initial: 0.34,
-      format: (v) => `${(v * 100).toFixed(0)}%`,
-    },
-  ];
+  const def = {
+    id: 'mass', label: 'Mass', unit: 'M☉',
+    min: 0.1, max: 50, step: 0.1, initial: 1.0,
+    format: (v) => `${v} M☉`,
+  };
 
-  const inputs = {};
-  let msLocked = true;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'slider-group';
 
-  // Toggle
-  const toggleWrapper = document.createElement('div');
-  toggleWrapper.className = 'ms-toggle';
+  const labelRow = document.createElement('div');
+  labelRow.className = 'slider-label-row';
 
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.id = 'ms-lock';
-  checkbox.checked = true;
+  const label = document.createElement('label');
+  label.htmlFor = def.id;
+  label.textContent = def.label;
 
-  const toggleLabel = document.createElement('label');
-  toggleLabel.htmlFor = 'ms-lock';
-  toggleLabel.textContent = 'Lock to Main Sequence';
+  const valueDisplay = document.createElement('span');
+  valueDisplay.className = 'slider-value';
+  valueDisplay.textContent = def.format(def.initial);
 
-  const helpIcon = document.createElement('span');
-  helpIcon.className = 'help-icon';
-  helpIcon.textContent = '?';
-  helpIcon.setAttribute('data-tooltip',
-    'The main sequence is the band on the Hertzsprung\u2013Russell diagram where stars spend ~90% of their lives, fusing hydrogen into helium. Along it, a star\u2019s mass determines its temperature, radius, and luminosity. Locking to the main sequence couples these quantities via empirical scaling relations.'
-  );
-  toggleLabel.appendChild(helpIcon);
+  labelRow.appendChild(label);
+  labelRow.appendChild(valueDisplay);
 
-  checkbox.addEventListener('change', () => {
-    msLocked = checkbox.checked;
-    // When re-locking, snap to MS from current mass
-    if (msLocked) {
-      const mass = parseFloat(inputs.mass.input.value);
-      setSilent('temperature', Math.round(temperatureFromMass(mass) / 100) * 100);
-      setSilent('radius', Math.round(radiusFromMass(mass) * 10) / 10);
-      onChange(getValues());
-    }
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.id = def.id;
+  input.min = def.min;
+  input.max = def.max;
+  input.step = def.step;
+  input.value = def.initial;
+
+  input.addEventListener('input', () => {
+    const mass = parseFloat(input.value);
+    valueDisplay.textContent = def.format(mass);
+    onChange(getValuesForMass(mass));
   });
 
-  toggleWrapper.appendChild(checkbox);
-  toggleWrapper.appendChild(toggleLabel);
-  container.appendChild(toggleWrapper);
+  wrapper.appendChild(labelRow);
+  wrapper.appendChild(input);
+  container.appendChild(wrapper);
 
-  // Sliders
-  for (const def of sliderDefs) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'slider-group';
-
-    const labelRow = document.createElement('div');
-    labelRow.className = 'slider-label-row';
-
-    const label = document.createElement('label');
-    label.htmlFor = def.id;
-    label.textContent = def.label;
-
-    const valueDisplay = document.createElement('span');
-    valueDisplay.className = 'slider-value';
-    valueDisplay.textContent = def.format(def.initial);
-
-    labelRow.appendChild(label);
-    labelRow.appendChild(valueDisplay);
-
-    const input = document.createElement('input');
-    input.type = 'range';
-    input.id = def.id;
-    input.min = def.min;
-    input.max = def.max;
-    input.step = def.step;
-    input.value = def.initial;
-
-    input.addEventListener('input', () => {
-      onSliderInput(def.id);
-    });
-
-    wrapper.appendChild(labelRow);
-    wrapper.appendChild(input);
-    container.appendChild(wrapper);
-
-    inputs[def.id] = { input, valueDisplay, def };
-  }
-
-  let updating = false;
-
-  function setSilent(id, value) {
-    const clamped = Math.min(inputs[id].def.max, Math.max(inputs[id].def.min, value));
-    const stepped = Math.round(clamped / inputs[id].def.step) * inputs[id].def.step;
-    inputs[id].input.value = stepped;
-    inputs[id].valueDisplay.textContent = inputs[id].def.format(
-      parseFloat(inputs[id].input.value)
-    );
-  }
-
-  function onSliderInput(changedId) {
-    if (updating) return;
-    updating = true;
-
-    const val = parseFloat(inputs[changedId].input.value);
-    inputs[changedId].valueDisplay.textContent = inputs[changedId].def.format(val);
-
-    if (msLocked) {
-      if (changedId === 'mass') {
-        setSilent('temperature', Math.round(temperatureFromMass(val) / 100) * 100);
-        setSilent('radius', Math.round(radiusFromMass(val) * 10) / 10);
-      } else if (changedId === 'temperature') {
-        const inferredMass = massFromTemperature(val);
-        setSilent('mass', Math.round(inferredMass * 10) / 10);
-        setSilent('radius', Math.round(radiusFromMass(inferredMass) * 10) / 10);
-      } else if (changedId === 'radius') {
-        // Radius changed → infer mass from radius, then update T
-        const inferredMass = massFromRadius(val);
-        setSilent('mass', Math.round(inferredMass * 10) / 10);
-        setSilent('temperature', Math.round(temperatureFromMass(inferredMass) / 100) * 100);
+  /**
+   * Derive T, R, X from MIST track at present-day age, or from scaling relations.
+   */
+  function getValuesForMass(mass) {
+    if (mistLoaded()) {
+      // Use present-day Sun age for solar mass, ZAMS for others
+      const age = mass >= 0.9 && mass <= 1.1 ? 4.6e9 : getZAMSAge(mass);
+      const st = getStateAtAge(mass, age);
+      if (st) {
+        return {
+          mass,
+          temperature: Math.round(st.Teff),
+          radius: Math.round(st.R * 100) / 100,
+          hydrogen: Math.max(0, st.Xc),
+        };
       }
     }
-
-    updating = false;
-    onChange(getValues());
-  }
-
-  function getValues() {
+    // Fallback: scaling relations
     return {
-      temperature: parseFloat(inputs.temperature.input.value),
-      mass: parseFloat(inputs.mass.input.value),
-      radius: parseFloat(inputs.radius.input.value),
-      hydrogen: parseFloat(inputs.hydrogen.input.value),
+      mass,
+      temperature: Math.round(temperatureFromMass(mass) / 100) * 100,
+      radius: Math.round(radiusFromMass(mass) * 10) / 10,
+      hydrogen: 0.70,
     };
   }
 
+  function getValues() {
+    return getValuesForMass(parseFloat(input.value));
+  }
+
   function setValues(values) {
-    for (const [key, val] of Object.entries(values)) {
-      if (inputs[key]) {
-        inputs[key].input.value = val;
-        inputs[key].valueDisplay.textContent = inputs[key].def.format(val);
-      }
+    if (values.mass !== undefined) {
+      input.value = values.mass;
+      valueDisplay.textContent = def.format(parseFloat(input.value));
     }
     onChange(getValues());
   }
 
   function setDisabled(disabled) {
-    for (const { input } of Object.values(inputs)) {
-      input.disabled = disabled;
-    }
-    // Also disable the MS lock checkbox
-    checkbox.disabled = disabled;
+    input.disabled = disabled;
     container.classList.toggle('sliders-disabled', disabled);
   }
 
   return { getValues, setValues, setDisabled };
-}
-
-// Need to import this — adding inline to avoid circular dependency issues
-function massFromRadius(targetR) {
-  // Inverse of radiusFromMass via bisection
-  let lo = 0.1, hi = 50;
-  for (let i = 0; i < 40; i++) {
-    const mid = (lo + hi) / 2;
-    const r = mid <= 1 ? Math.pow(mid, 0.57) : Math.pow(mid, 0.8);
-    if (r < targetR) lo = mid;
-    else hi = mid;
-  }
-  return (lo + hi) / 2;
 }

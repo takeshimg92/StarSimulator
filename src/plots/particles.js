@@ -32,23 +32,20 @@ const HIST_FRAC = 0.3;
 const PAD = 8;
 const HIST_PAD_BOTTOM = 20;
 
-const VISUAL_SPEED_SCALE = 80;
+const VISUAL_SPEED_SCALE = 180;
 
-// Species definitions
-// Solar core composition by mass: X=0.70 (H), Y=0.28 (He), Z=0.02 (metals, ignored)
+// Species: protons and helium nuclei only (electrons removed for clarity).
 // Number fractions: n_H ∝ X/1, n_He ∝ Y/4
-// n_H : n_He ≈ 0.70 : 0.07 = 10 : 1
-// n_e = n_H + 2·n_He ≈ 10 + 2 = 12 (per 10 H)
-// Normalize: total ~ 10+1+12 = 23 → H:43%, He:4%, e:53%
-// For visibility, cap electrons and boost He slightly
+// At X=0.70, Y=0.28: n_H:n_He ≈ 0.70:0.07 = 10:1
+// Normalize: H ≈ 91%, He ≈ 9%
 const SPECIES = [
   {
     id: 'H',
     label: 'H⁺',
     color: 'rgba(100, 180, 255, 0.9)',
     histColor: 'rgba(100, 180, 255, 0.35)',
-    massRatio: 1,        // relative to proton
-    fraction: 0.43,
+    massRatio: 1,
+    fraction: 0.91,
     radius: 2.5,
   },
   {
@@ -57,17 +54,8 @@ const SPECIES = [
     color: 'rgba(255, 200, 80, 0.9)',
     histColor: 'rgba(255, 200, 80, 0.35)',
     massRatio: 4,
-    fraction: 0.09,      // boosted slightly for visibility
+    fraction: 0.09,
     radius: 3.5,
-  },
-  {
-    id: 'e',
-    label: 'e⁻',
-    color: 'rgba(180, 255, 180, 0.9)',
-    histColor: 'rgba(180, 255, 180, 0.35)',
-    massRatio: 1 / 1836, // electron mass / proton mass
-    fraction: 0.48,
-    radius: 1.5,
   },
 ];
 
@@ -145,15 +133,13 @@ function thermalSpeedForMassAtTemp(massRatio, temp) {
  * spawns one for under-represented species.
  */
 export function updateParticleComposition(X, Y) {
-  const Z_val = 1 - X - Y;
   const nH = X;
   const nHe = Y / 4;
-  const nE = nH + 2 * nHe;
-  const total = nH + nHe + nE;
-
-  SPECIES[0].fraction = nH / total;
-  SPECIES[1].fraction = nHe / total;
-  SPECIES[2].fraction = nE / total;
+  const total = nH + nHe;
+  if (total > 0) {
+    SPECIES[0].fraction = nH / total;
+    SPECIES[1].fraction = nHe / total;
+  }
 
   // Target counts
   for (const species of SPECIES) {
@@ -230,6 +216,43 @@ function spawnParticles() {
 }
 
 function stepSimulation(dt) {
+  if (remnantMode === 'blackhole') return; // nothing to simulate
+
+  if (remnantMode === 'neutronstar' || remnantMode === 'whitedwarf') {
+    // Confined to a packed region — particles bounce within a circle
+    const cx = PAD + boxW / 2;
+    const cy = PAD + boxH / 2;
+    const maxR = remnantMode === 'neutronstar'
+      ? Math.min(boxW, boxH) * 0.15
+      : Math.min(boxW, boxH) * 0.25;
+
+    for (const p of particles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+
+      // Bounce off circular boundary
+      const dx = p.x - cx, dy = p.y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > maxR) {
+        // Reflect velocity off the circular wall
+        const nx = dx / dist, ny = dy / dist;
+        const dot = p.vx * nx + p.vy * ny;
+        p.vx -= 2 * dot * nx;
+        p.vy -= 2 * dot * ny;
+        p.x = cx + nx * maxR;
+        p.y = cy + ny * maxR;
+      }
+
+      // NS: add random jitter to simulate quantum vibration
+      if (remnantMode === 'neutronstar') {
+        p.vx += (Math.random() - 0.5) * 15 * dt;
+        p.vy += (Math.random() - 0.5) * 15 * dt;
+      }
+    }
+    return;
+  }
+
+  // Normal mode: rectangular box
   const xMin = PAD;
   const xMax = PAD + boxW;
   const yMin = PAD;
@@ -260,10 +283,36 @@ function stepSimulation(dt) {
 function draw() {
   ctx.clearRect(0, 0, totalW, totalH);
 
+  if (remnantMode === 'blackhole') {
+    // Black hole: empty black box with label
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(PAD, PAD, boxW, boxH);
+    ctx.font = '11px Inter, monospace';
+    ctx.fillStyle = 'rgba(100, 120, 200, 0.4)';
+    ctx.textAlign = 'center';
+    ctx.fillText('Singularity', PAD + boxW / 2, PAD + boxH / 2);
+    ctx.textAlign = 'start';
+    return;
+  }
+
   // --- Particle box ---
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
   ctx.lineWidth = 1;
-  ctx.strokeRect(PAD, PAD, boxW, boxH);
+
+  if (remnantMode === 'neutronstar' || remnantMode === 'whitedwarf') {
+    // Draw circular boundary instead of rectangle
+    const cx = PAD + boxW / 2;
+    const cy = PAD + boxH / 2;
+    const maxR = remnantMode === 'neutronstar'
+      ? Math.min(boxW, boxH) * 0.15
+      : Math.min(boxW, boxH) * 0.25;
+    ctx.beginPath();
+    ctx.arc(cx, cy, maxR, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    ctx.strokeRect(PAD, PAD, boxW, boxH);
+  }
 
   // Draw particles
   for (const p of particles) {
@@ -271,6 +320,14 @@ function draw() {
     ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
     ctx.fillStyle = p.color;
     ctx.fill();
+  }
+
+  // Remnant label
+  if (remnantMode) {
+    ctx.font = '9px Inter, monospace';
+    ctx.fillStyle = 'rgba(140, 160, 255, 0.4)';
+    const label = remnantMode === 'neutronstar' ? 'Degenerate neutrons' : 'C/O lattice';
+    ctx.fillText(label, PAD + 4, PAD + boxH - 4);
   }
 
   // Temperature display
@@ -297,6 +354,9 @@ function draw() {
   }
 
   // --- Velocity distribution (protons only, for clarity) ---
+  // Skip histogram entirely in remnant states
+  if (remnantMode) return;
+
   const histY = totalH * BOX_FRAC;
   const histW = boxW;
   const histX = PAD;
@@ -396,4 +456,69 @@ function animate() {
 
 export function stopParticleSim() {
   if (animId) cancelAnimationFrame(animId);
+}
+
+// --- Remnant states ---
+let remnantMode = null; // null, 'blackhole', 'neutronstar', 'whitedwarf'
+
+/**
+ * Switch particles to a stellar remnant state.
+ * - 'blackhole': all particles vanish (everything fell in)
+ * - 'neutronstar': super-packed, vibrating in place (degeneracy pressure)
+ * - 'whitedwarf': packed, slow, C/O composition, blue-white tint
+ * - null: restore normal behavior
+ */
+export function setRemnantState(type) {
+  remnantMode = type;
+
+  if (type === 'blackhole') {
+    // Everything disappears
+    particles = [];
+  } else if (type === 'neutronstar') {
+    // Super-packed neutrons vibrating in a tiny region
+    const cx = PAD + boxW / 2;
+    const cy = PAD + boxH / 2;
+    const packR = Math.min(boxW, boxH) * 0.15; // tiny packed region
+    particles = [];
+    const count = 200;
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = Math.random() * packR;
+      particles.push({
+        x: cx + r * Math.cos(angle),
+        y: cy + r * Math.sin(angle),
+        vx: (Math.random() - 0.5) * 8, // slight vibration
+        vy: (Math.random() - 0.5) * 8,
+        radius: 1.5,
+        color: 'rgba(140, 160, 255, 0.9)',
+        speciesId: 'n',
+        massRatio: 1,
+      });
+    }
+  } else if (type === 'whitedwarf') {
+    // Dense C/O lattice, slow-moving, blue-white
+    const cx = PAD + boxW / 2;
+    const cy = PAD + boxH / 2;
+    const packR = Math.min(boxW, boxH) * 0.25;
+    particles = [];
+    const count = 150;
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = Math.random() * packR;
+      const isCarbon = Math.random() < 0.5;
+      particles.push({
+        x: cx + r * Math.cos(angle),
+        y: cy + r * Math.sin(angle),
+        vx: (Math.random() - 0.5) * 3, // very slow
+        vy: (Math.random() - 0.5) * 3,
+        radius: isCarbon ? 2.0 : 2.5,
+        color: isCarbon ? 'rgba(180, 200, 255, 0.8)' : 'rgba(200, 220, 255, 0.8)',
+        speciesId: isCarbon ? 'C' : 'O',
+        massRatio: isCarbon ? 12 : 16,
+      });
+    }
+  } else {
+    // Restore normal — respawn with current temperature
+    spawnParticles();
+  }
 }

@@ -3,3 +3,8 @@ dist/
 .vite/
 
 CLAUDE.md
+
+# MIST raw data (large, not needed at runtime)
+data/mist_raw/
+data/*.txz
+data/*.py

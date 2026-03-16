@@ -168,6 +168,85 @@ When core hydrogen is nearly exhausted ($X_{\\text{core}} < 0.01$), the star lea
       { text: 'Wikipedia: Mass-energy equivalence', url: 'https://en.wikipedia.org/wiki/Mass%E2%80%93energy_equivalence' },
     ],
   },
+  {
+    title: 'Beyond the Main Sequence: the Subgiant Phase',
+    body: `When the core hydrogen is exhausted ($X_{\\text{core}} < 0.01$), fusion ceases in the center. The inert helium core, no longer supported by nuclear energy, begins to contract under gravity. This releases gravitational potential energy, heating the surrounding layers.
+
+Hydrogen fusion continues in a thin <b>shell</b> around the helium core. The shell-burning luminosity actually exceeds the previous core-burning luminosity, because the shell sits at a higher temperature (compressed against the contracting core).`,
+    after: `The star's structure now obeys the <b>mirror principle</b>: when the core contracts, the envelope expands. This is a consequence of the virial theorem applied to the core and envelope separately — the total gravitational energy must be conserved, so if the core shrinks, the envelope must swell.
+
+The star moves rightward on the H-R diagram as $T_{\\text{eff}}$ drops while luminosity remains roughly constant. This is the <b>subgiant branch</b>, lasting roughly 1 billion years for a solar-mass star.`,
+    refs: [
+      { text: 'Wikipedia: Subgiant', url: 'https://en.wikipedia.org/wiki/Subgiant' },
+      { text: 'Kippenhahn, Weigert & Weiss, Ch. 31 — Evolution through Hydrogen Burning', url: 'https://link.springer.com/book/10.1007/978-3-642-30304-3' },
+    ],
+  },
+  {
+    title: 'The Red Giant Branch',
+    body: `As the helium core grows in mass (fed by shell burning) and continues contracting, the envelope expands dramatically. The star ascends the <b>red giant branch (RGB)</b>: luminosity increases by a factor of $\\sim$1000–3000 while $T_{\\text{eff}}$ drops to $\\sim$4000 K. The radius swells to $\\sim$100–200 $R_\\odot$.`,
+    equation: String.raw`L_{\text{RGB}} \approx 2300\,L_\odot\,\left(\frac{M_c}{0.45\,M_\odot}\right)^6`,
+    after: `This steep dependence on core mass $M_c$ is the <b>core mass-luminosity relation</b> for RGB stars — a remarkable result: the luminosity depends almost entirely on the helium core mass, not on the total stellar mass or envelope properties.
+
+The deep convective envelope penetrates inward during a process called <b>first dredge-up</b>, mixing processed material (lower $^{12}$C/$^{13}$C ratio, slightly enhanced $^{14}$N) to the surface — an observationally confirmed prediction of stellar evolution theory.
+
+The convective envelope now encompasses almost the entire star ($r/R > 0.1$), in contrast to the main-sequence structure where convection was limited to the outer 30%.`,
+    refs: [
+      { text: 'Wikipedia: Red giant branch', url: 'https://en.wikipedia.org/wiki/Red-giant_branch' },
+      { text: 'Iben (1967) — Stellar evolution within and off the main sequence', url: 'https://doi.org/10.1146/annurev.aa.05.090167.000245' },
+      { text: 'Salaris & Cassisi, Ch. 5 — Hydrogen shell burning', url: 'https://onlinelibrary.wiley.com/doi/book/10.1002/0470033452' },
+    ],
+  },
+  {
+    title: 'Electron Degeneracy & the Helium Core',
+    body: `As the helium core contracts without fusion to support it, the core density rises to $\\sim 10^6$ g/cm$^3$. At these densities, the electrons become <b>degenerate</b>: the Pauli exclusion principle, not thermal pressure, supports the core against gravity.`,
+    equation: String.raw`P_{\text{deg}} = K_1\left(\frac{\rho}{\mu_e}\right)^{5/3} \qquad \text{(non-relativistic)}`,
+    after: `A degenerate gas has a crucial property: its pressure is nearly independent of temperature. This means the core can heat up without expanding — a thermal runaway becomes possible.
+
+The core temperature steadily rises as gravitational contraction and shell burning heat it. When it reaches $T_c \\approx 10^8$ K, helium fusion ignites via the <b>triple-alpha process</b>:`,
+    equation2: String.raw`3\,{}^4\text{He} \;\longrightarrow\; {}^{12}\text{C} + \gamma \qquad (Q = 7.275\;\text{MeV})`,
+    after2: `This reaction has an extraordinary temperature sensitivity: $\\varepsilon_{3\\alpha} \\propto T^{40}$. In a normal (non-degenerate) gas, a temperature increase would cause expansion and cooling — a natural thermostat. But in a degenerate core, pressure doesn't respond to temperature, so there is no thermostat.`,
+    refs: [
+      { text: 'Wikipedia: Degenerate matter', url: 'https://en.wikipedia.org/wiki/Degenerate_matter' },
+      { text: 'Wikipedia: Triple-alpha process', url: 'https://en.wikipedia.org/wiki/Triple-alpha_process' },
+    ],
+  },
+  {
+    title: 'The Helium Flash',
+    body: `At the tip of the red giant branch, the degenerate helium core reaches $T_c \\approx 10^8$ K and the triple-alpha process ignites. Because the degenerate gas cannot expand to cool itself, the nuclear energy release raises the temperature further, which accelerates the reaction — a <b>thermonuclear runaway</b>.
+
+In a matter of seconds, the luminosity in the core spikes to $\\sim 10^{11}\\,L_\\odot$ — comparable to an entire galaxy. This is the <b>helium flash</b>.`,
+    after: `Despite the enormous energy release, the flash is invisible from outside: all the energy goes into lifting the electron degeneracy and expanding the core. By the time the energy reaches the surface, it has been absorbed. The star's surface luminosity actually <i>decreases</i> as the core settles into stable helium burning.
+
+After the flash, the core is no longer degenerate. The star contracts and heats, settling onto the <b>horizontal branch</b> (or <b>red clump</b> for solar-metallicity stars), where it burns helium in the core and hydrogen in a shell simultaneously — a brief but stable phase lasting $\\sim$100 million years.
+
+For the Sun, this entire post-MS journey — subgiant to RGB tip to helium flash — takes roughly 1–2 billion years after the main sequence ends.`,
+    refs: [
+      { text: 'Wikipedia: Helium flash', url: 'https://en.wikipedia.org/wiki/Helium_flash' },
+      { text: 'Wikipedia: Horizontal branch', url: 'https://en.wikipedia.org/wiki/Horizontal_branch' },
+      { text: 'Thomas (1967) — The helium flash', url: 'https://doi.org/10.1086/149093' },
+    ],
+  },
+  {
+    title: 'The Sun\'s Future',
+    body: `Our Sun is currently about 4.6 billion years into its main-sequence lifetime. Its future evolution:
+
+<b>Now → 10 Gyr:</b> remaining main-sequence life. Luminosity increases by another factor of $\\sim$2, eventually making Earth too hot for liquid water ($\\sim$1–2 Gyr from now).
+
+<b>10 → 11 Gyr:</b> subgiant phase. Core hydrogen exhausted, envelope begins expanding.
+
+<b>11 → 12 Gyr:</b> red giant branch. Radius grows to $\\sim$150 $R_\\odot$ (engulfing Mercury and Venus; Earth's fate is uncertain). Luminosity peaks at $\\sim$2300 $L_\\odot$.
+
+<b>12 Gyr:</b> helium flash. Core helium ignites; star contracts to $\\sim$10 $R_\\odot$ on the horizontal branch.
+
+<b>12 → 12.1 Gyr:</b> core helium burning (red clump). Stable but brief.
+
+<b>12.1+ Gyr:</b> asymptotic giant branch, thermal pulses, planetary nebula ejection, and finally a $\\sim$0.55 $M_\\odot$ white dwarf — the Sun's final state for the rest of eternity.`,
+    refs: [
+      { text: 'Schröder & Connon Smith (2008) — Distant future of the Sun and Earth revisited', url: 'https://doi.org/10.1111/j.1365-2966.2008.12957.x' },
+      { text: 'Wikipedia: Future of the Sun', url: 'https://en.wikipedia.org/wiki/Sun#After_core_hydrogen_exhaustion' },
+      { text: 'Sackmann, Boothroyd & Kraemer (1993) — Our Sun. III. Present and Future', url: 'https://doi.org/10.1086/172353' },
+    ],
+  },
 ];
 
 /**

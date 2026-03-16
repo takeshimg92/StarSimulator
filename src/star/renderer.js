@@ -8,6 +8,75 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { starVertexShader, starFragmentShader } from './shaders.js';
 import { temperatureToRGB } from '../physics/blackbody.js';
 
+// Gravitational lensing post-processing shader
+const LensingShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uBHScreenPos: { value: new THREE.Vector2(0.5, 0.5) },
+    uBHScreenRadius: { value: 0.0 },
+    uStrength: { value: 0.0 },
+    uAspect: { value: 1.0 },  // width/height for circular correction
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform vec2 uBHScreenPos;
+    uniform float uBHScreenRadius;
+    uniform float uStrength;
+    uniform float uAspect;
+    varying vec2 vUv;
+
+    void main() {
+      if (uStrength < 0.001) {
+        gl_FragColor = texture2D(tDiffuse, vUv);
+        return;
+      }
+
+      // Correct for aspect ratio so the BH shadow and ring are circular
+      vec2 aspectCorrect = vec2(uAspect, 1.0);
+      vec2 delta = (vUv - uBHScreenPos) * aspectCorrect;
+      float dist = length(delta);
+      float rEH = uBHScreenRadius * uAspect; // corrected for aspect
+      float rPhoton = rEH * 1.5;
+      float rLens = rEH * 5.0;
+
+      vec2 uv = vUv;
+
+      if (dist > rEH * 0.8 && dist < rLens) {
+        // Gravitational lensing: to show objects displaced AROUND the BH,
+        // we sample INWARD (toward the BH center). This makes the pixel
+        // show light that was bent around from behind the BH.
+        vec2 dir = normalize(delta);
+        float deflection = uStrength * rEH * rEH / (dist * dist + rEH * 0.5);
+        deflection *= smoothstep(rLens, rLens * 0.3, dist);
+        // Sample inward (toward BH) — undo the aspect correction for UV offset
+        uv = vUv - (dir / aspectCorrect) * deflection;
+      }
+
+      vec4 color = texture2D(tDiffuse, uv);
+
+      // Pure black inside event horizon
+      if (dist < rEH) {
+        color.rgb = vec3(0.0);
+      } else if (dist < rEH * 1.15) {
+        color.rgb *= smoothstep(rEH, rEH * 1.15, dist);
+      }
+
+      // Thin photon ring at 1.5× rEH
+      float ring = exp(-pow((dist - rPhoton) / (rEH * 0.03), 2.0));
+      color.rgb += vec3(0.3, 0.4, 0.6) * ring * uStrength * 0.5;
+
+      gl_FragColor = color;
+    }
+  `,
+};
+
 // Full-screen color tint shader for sunglasses effect
 const TintShader = {
   uniforms: {
@@ -40,7 +109,7 @@ const TintShader = {
   `,
 };
 
-let scene, camera, renderer, composer, bloomPass, tintPass, controls;
+let scene, camera, renderer, composer, bloomPass, tintPass, lensingPass, controls;
 let starMesh, starMaterial, starfieldMesh;
 let baseBloom = 0.8;
 let rotationSpeed = 0.002;
@@ -54,18 +123,33 @@ let crossSectionGroup = null;
 let csCanvas = null, csCtx = null, csTexture = null;
 const CS_SIZE = 512;
 const CS_HALF = CS_SIZE / 2;
-let csProfiles = null;  // cached profiles for cross-section drawing
-let csMass = 1.0;       // current stellar mass for zone structure
+let csProfiles = null;
+let csMass = 1.0;
+let csEvolutionState = null;  // { heCoreM, phase, Xc, Yc } from MIST track
 
 // --- Smooth transition state ---
-// Current (displayed) values lerp toward target values each frame
 const current = { scale: 1.0, r: 1, g: 0.85, b: 0.6, bloom: 1.5 };
 const target = { scale: 1.0, r: 1, g: 0.85, b: 0.6, bloom: 1.5 };
 const velocity = { scale: 0, r: 0, g: 0, b: 0, bloom: 0 };
 
-// Spring parameters: stiffness and damping for a critically-damped feel
-const SPRING_K = 12;   // stiffness
-const SPRING_D = 7;    // damping
+const SPRING_K = 12;
+const SPRING_D = 7;
+
+// Auto-zoom: camera pulls back as the star grows
+const DEFAULT_CAMERA_Z = 5;
+let targetCameraZ = DEFAULT_CAMERA_Z;
+let currentPhysicalRadius = 1.0; // R☉, for scale bar
+let autoZoomEnabled = false; // only true during time evolution
+
+// Star trail lines (long-exposure effect during auto-zoom)
+let starTrailMesh = null;
+let prevCameraPos = null;
+let trailOpacity = 0; // fades in/out
+
+// Black hole / remnant state
+let blackHoleActive = false;
+let remnantType = null; // null, 'blackhole', 'neutronstar', 'whitedwarf'
+let photonSphereMesh = null;
 
 // Wobble state — triggered on parameter change
 let wobbleAmount = 0;
@@ -113,6 +197,9 @@ export function initRenderer(container) {
     0.3    // threshold
   );
   composer.addPass(bloomPass);
+
+  lensingPass = new ShaderPass(LensingShader);
+  composer.addPass(lensingPass);
 
   tintPass = new ShaderPass(TintShader);
   composer.addPass(tintPass);
@@ -304,7 +391,7 @@ function addStarfield() {
   for (let i = 0; i < starCount; i++) {
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
-    const r = 40 + Math.random() * 60;
+    const r = 150 + Math.random() * 200;
     const i3 = i * 3;
     positions[i3] = r * Math.sin(phi) * Math.cos(theta);
     positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
@@ -312,7 +399,7 @@ function addStarfield() {
 
     // Varied sizes: mostly tiny, a few brighter
     const rand = Math.random();
-    sizes[i] = rand < 0.9 ? 0.05 + Math.random() * 0.1 : 0.15 + Math.random() * 0.2;
+    sizes[i] = rand < 0.9 ? 0.15 + Math.random() * 0.3 : 0.5 + Math.random() * 0.6;
 
     // Slight color variation: warm white to cool blue-white
     const warmth = 0.7 + Math.random() * 0.3;
@@ -327,7 +414,7 @@ function addStarfield() {
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
   const material = new THREE.PointsMaterial({
-    size: 0.12,
+    size: 0.4,
     sizeAttenuation: true,
     vertexColors: true,
     transparent: true,
@@ -335,26 +422,147 @@ function addStarfield() {
   });
   starfieldMesh = new THREE.Points(geometry, material);
   scene.add(starfieldMesh);
+
+  // Star trail lines: 2 vertices per star (current pos + offset pos)
+  // During auto-zoom, each line stretches radially from screen center
+  const trailPositions = new Float32Array(starCount * 6); // 2 * 3 per star
+  const trailColors = new Float32Array(starCount * 6);
+  for (let i = 0; i < starCount; i++) {
+    const i6 = i * 6;
+    const i3 = i * 3;
+    // Both endpoints start at the star's position (zero-length line)
+    trailPositions[i6] = positions[i3];
+    trailPositions[i6 + 1] = positions[i3 + 1];
+    trailPositions[i6 + 2] = positions[i3 + 2];
+    trailPositions[i6 + 3] = positions[i3];
+    trailPositions[i6 + 4] = positions[i3 + 1];
+    trailPositions[i6 + 5] = positions[i3 + 2];
+    // Same color as the star
+    trailColors[i6] = colors[i3];
+    trailColors[i6 + 1] = colors[i3 + 1];
+    trailColors[i6 + 2] = colors[i3 + 2];
+    trailColors[i6 + 3] = colors[i3];
+    trailColors[i6 + 4] = colors[i3 + 1];
+    trailColors[i6 + 5] = colors[i3 + 2];
+  }
+  const trailGeo = new THREE.BufferGeometry();
+  trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+  trailGeo.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
+  const trailMat = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.5,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    linewidth: 1,
+  });
+  starTrailMesh = new THREE.LineSegments(trailGeo, trailMat);
+  scene.add(starTrailMesh);
 }
 
 /**
- * Zone structure depends on mass:
- *   M < 1.3 M☉: radiative core, radiative mid-zone, convective envelope
- *   M ≥ 1.3 M☉: convective core, radiative envelope
- *
- * Returns { convInner, convOuter, coreConvective }
- *   - If coreConvective: convection is from 0 to convOuter (core convection)
- *   - Otherwise: convection is from convInner to 1.0 (envelope convection)
+ * Phase-aware zone structure from MIST evolution state.
+ * Returns { coreR, convInner, convOuter, coreConvective, shells, coreColor }
  */
-function getConvectionZone(mass) {
-  if (mass >= 1.3) {
-    // Massive stars: convective core extends further with mass
-    const coreConvR = Math.min(0.5, 0.2 + 0.1 * (mass - 1.3));
-    return { convInner: 0, convOuter: coreConvR, coreConvective: true };
+function getZoneStructure(mass, evoState) {
+  // Fallback: mass-only (static mode, no MIST data)
+  if (!evoState || evoState.phase === undefined) {
+    if (mass >= 1.3) {
+      const coreConvR = Math.min(0.5, 0.2 + 0.1 * (mass - 1.3));
+      return { coreR: 0.25, convInner: 0, convOuter: coreConvR, coreConvective: true, shells: [], coreColor: { r: 1, g: 1, b: 0.94 } };
+    }
+    const envConvR = Math.max(0.4, 0.7 - 0.2 * (1.0 - mass));
+    return { coreR: 0.25, convInner: envConvR, convOuter: 1.0, coreConvective: false, shells: [], coreColor: { r: 1, g: 1, b: 0.94 } };
   }
-  // Solar-type: convective envelope starts deeper for lower-mass stars
-  const envConvR = Math.max(0.4, 0.7 - 0.2 * (1.0 - mass));
-  return { convInner: envConvR, convOuter: 1.0, coreConvective: false };
+
+  const { heCoreM, phase, Xc, Yc } = evoState;
+
+  // Core radius from He core mass fraction
+  const coreMassFrac = mass > 0 ? (heCoreM || 0) / mass : 0;
+  const coreR = coreMassFrac > 0.01
+    ? Math.max(0.06, Math.min(0.45, 0.25 * Math.pow(coreMassFrac, 0.35)))
+    : (mass >= 1.3 ? 0.15 : 0.08);
+
+  // Core color from composition
+  const hFrac = Math.min(1, (Xc || 0) / 0.72);
+  const cFrac = Math.max(0, 1 - (Xc || 0) / 0.72 - (Yc || 0) / 0.98);
+  const coreColor = {
+    r: 1.0,
+    g: 1.0 - 0.15 * cFrac,
+    b: 1.0 - 0.2 * (1 - hFrac) - 0.3 * cFrac,
+  };
+
+  let convInner, convOuter, coreConvective;
+  const shells = [];
+
+  switch (phase) {
+    case -1: // PMS: deep or full convection
+      convInner = 0;
+      convOuter = 1.0;
+      coreConvective = true;
+      break;
+
+    case 0: // MS
+      if (mass >= 1.3) {
+        coreConvective = true;
+        convInner = 0;
+        convOuter = Math.min(0.5, 0.15 + 0.1 * (mass - 1.3));
+      } else {
+        coreConvective = false;
+        convInner = Math.max(0.4, 0.7 - 0.2 * (1.0 - mass));
+        convOuter = 1.0;
+      }
+      // Late MS: faint H-shell forming
+      if (Xc < 0.2) {
+        shells.push({ rFrac: coreR, width: 0.012, intensity: 0.3 * (1 - Xc / 0.2), color: 'H' });
+      }
+      break;
+
+    case 2: // Subgiant / RGB: deep convective envelope, H-shell burning
+      coreConvective = false;
+      // Convection deepens as star ascends RGB
+      convInner = Math.max(coreR + 0.04, 0.15 + 0.35 * Math.max(0, Xc));
+      convOuter = 1.0;
+      shells.push({ rFrac: coreR, width: 0.015, intensity: 0.8, color: 'H' });
+      break;
+
+    case 3: // Core He burning (HB)
+      coreConvective = false;
+      convInner = Math.max(coreR + 0.08, 0.25);
+      convOuter = 1.0;
+      shells.push({ rFrac: coreR + 0.03, width: 0.012, intensity: 0.5, color: 'H' });
+      break;
+
+    case 4: // Early AGB: deep envelope convection, H + He shells
+      coreConvective = false;
+      convInner = coreR + 0.04;
+      convOuter = 1.0;
+      shells.push({ rFrac: coreR + 0.03, width: 0.012, intensity: 0.6, color: 'H' });
+      shells.push({ rFrac: coreR * 0.7, width: 0.008, intensity: 0.4, color: 'He' });
+      break;
+
+    case 5: // TP-AGB: similar to EAGB
+    case 6: // Post-AGB
+      coreConvective = false;
+      convInner = coreR + 0.03;
+      convOuter = 1.0;
+      shells.push({ rFrac: coreR + 0.02, width: 0.01, intensity: 0.5, color: 'H' });
+      shells.push({ rFrac: coreR * 0.6, width: 0.008, intensity: 0.3, color: 'He' });
+      break;
+
+    case 9: // Wolf-Rayet
+      coreConvective = true;
+      convInner = 0;
+      convOuter = 0.5;
+      break;
+
+    default:
+      coreConvective = false;
+      convInner = 0.7;
+      convOuter = 1.0;
+  }
+
+  return { coreR, convInner, convOuter, coreConvective, shells, coreColor };
 }
 
 /**
@@ -369,15 +577,38 @@ function hashf(n) {
  * and animated convection cells in the appropriate zone.
  */
 function drawCrossSection(time) {
-  if (!csCtx || !csProfiles) return;
+  if (!csCtx) return;
 
   const ctx = csCtx;
   const R = CS_HALF;
   ctx.clearRect(0, 0, CS_SIZE, CS_SIZE);
 
+  // Remnant states: simple fills
+  if (remnantType === 'blackhole') {
+    // Fully transparent — nothing to draw
+    return;
+  }
+  if (remnantType === 'neutronstar' || remnantType === 'whitedwarf') {
+    // Pure white filled circle
+    ctx.beginPath();
+    ctx.arc(R, R, R * 0.95, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(220, 230, 255, 0.9)';
+    ctx.fill();
+    // Label
+    ctx.font = '14px Inter, monospace';
+    ctx.fillStyle = 'rgba(100, 120, 180, 0.6)';
+    ctx.textAlign = 'center';
+    ctx.fillText(remnantType === 'neutronstar' ? 'Neutron star' : 'White dwarf', R, R + 5);
+    ctx.textAlign = 'start';
+    csTexture.needsUpdate = true;
+    return;
+  }
+
+  if (!csProfiles) return;
+
   const profiles = csProfiles;
   const numR = profiles.r.length;
-  const zone = getConvectionZone(csMass);
+  const zone = getZoneStructure(csMass, csEvolutionState);
 
   // --- Radial gradient background ---
   // Hot interior is pushed toward white; only the outer layers show color.
@@ -414,8 +645,8 @@ function drawCrossSection(time) {
     // Massive star: radiative envelope from convOuter to 1.0
     if (zone.convOuter < 0.95) radZones.push({ r0: zone.convOuter, r1: 0.95 });
   } else {
-    // Solar-type: radiative zone from core boundary (0.25) to convInner
-    if (zone.convInner > 0.30) radZones.push({ r0: 0.25, r1: zone.convInner });
+    // Radiative zone from core boundary to convInner
+    if (zone.convInner > zone.coreR + 0.05) radZones.push({ r0: zone.coreR, r1: zone.convInner });
   }
 
   for (const rz of radZones) {
@@ -563,22 +794,22 @@ function drawCrossSection(time) {
     ctx.setLineDash([]);
   }
 
-  // --- Pulsating core glow ---
+  // --- Pulsating core glow (uses zone.coreR and zone.coreColor) ---
   const corePulse = 0.9 + 0.1 * Math.sin(time * 1.5);
-  const coreGlowR = 0.25 * R * 1.3; // glow extends slightly beyond q
-  const coreGrad = ctx.createRadialGradient(R, R, 0.15 * R, R, R, coreGlowR);
-  coreGrad.addColorStop(0, `rgba(255, 255, 240, ${(0.25 * corePulse).toFixed(3)})`);
-  coreGrad.addColorStop(0.6, `rgba(255, 250, 220, ${(0.1 * corePulse).toFixed(3)})`);
+  const cc = zone.coreColor || { r: 1, g: 1, b: 0.94 };
+  const coreGlowR = zone.coreR * R * 1.3;
+  const coreGrad = ctx.createRadialGradient(R, R, zone.coreR * R * 0.5, R, R, coreGlowR);
+  coreGrad.addColorStop(0, `rgba(${Math.round(cc.r*255)}, ${Math.round(cc.g*255)}, ${Math.round(cc.b*255)}, ${(0.25 * corePulse).toFixed(3)})`);
+  coreGrad.addColorStop(0.6, `rgba(${Math.round(cc.r*240)}, ${Math.round(cc.g*240)}, ${Math.round(cc.b*220)}, ${(0.1 * corePulse).toFixed(3)})`);
   coreGrad.addColorStop(1, 'rgba(255, 240, 200, 0)');
   ctx.beginPath();
   ctx.arc(R, R, coreGlowR, 0, Math.PI * 2);
   ctx.fillStyle = coreGrad;
   ctx.fill();
 
-  // --- Soft boundary glows (instead of hard rings) ---
-  // Core boundary glow at q=0.25
-  const coreBndR = 0.25 * R;
-  const coreBndW = R * 0.03; // glow width
+  // --- Core boundary glow ---
+  const coreBndR = zone.coreR * R;
+  const coreBndW = R * 0.03;
   const coreBndGrad = ctx.createRadialGradient(R, R, coreBndR - coreBndW, R, R, coreBndR + coreBndW);
   coreBndGrad.addColorStop(0, 'rgba(255, 255, 220, 0)');
   coreBndGrad.addColorStop(0.45, 'rgba(255, 255, 220, 0.2)');
@@ -589,7 +820,28 @@ function drawCrossSection(time) {
   ctx.fillStyle = coreBndGrad;
   ctx.fill();
 
-  // Convection zone boundary glow
+  // --- Shell burning rings ---
+  for (const shell of zone.shells || []) {
+    const shellR = shell.rFrac * R;
+    const shellW = shell.width * R;
+    const pulse = 0.85 + 0.15 * Math.sin(time * 2.5 + shell.rFrac * 10);
+    const alpha = shell.intensity * pulse;
+    const shellColor = shell.color === 'H'
+      ? `rgba(255, 240, 200, ${alpha.toFixed(3)})`
+      : `rgba(200, 220, 255, ${alpha.toFixed(3)})`;
+
+    const shellGrad = ctx.createRadialGradient(R, R, Math.max(0, shellR - shellW), R, R, shellR + shellW);
+    shellGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    shellGrad.addColorStop(0.35, shellColor);
+    shellGrad.addColorStop(0.65, shellColor);
+    shellGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.beginPath();
+    ctx.arc(R, R, shellR + shellW, 0, Math.PI * 2);
+    ctx.fillStyle = shellGrad;
+    ctx.fill();
+  }
+
+  // --- Convection zone boundary glow ---
   const convBndR = (zone.coreConvective ? zone.convOuter : zone.convInner) * R;
   const convBndW = R * 0.025;
   const convBndGrad = ctx.createRadialGradient(R, R, convBndR - convBndW, R, R, convBndR + convBndW);
@@ -605,9 +857,13 @@ function drawCrossSection(time) {
   csTexture.needsUpdate = true;
 }
 
-export function setCrossSectionProfiles(profiles, mass) {
+export { getZoneStructure };
+export function getRemnantType() { return remnantType; }
+
+export function setCrossSectionProfiles(profiles, mass, evolutionState) {
   csProfiles = profiles;
   if (mass !== undefined) csMass = mass;
+  if (evolutionState) csEvolutionState = evolutionState;
 }
 
 let lastTime = performance.now();
@@ -619,11 +875,18 @@ function animate() {
   const dt = Math.min((now - lastTime) / 1000, 0.05); // cap at 50ms
   lastTime = now;
 
-  // Spring-based interpolation for each property
+  // Adaptive spring: stiffer when the target is changing fast (rapid evolution).
+  // Measure how far the scale target is from current — large gap means we're
+  // falling behind and need to catch up.
+  const scaleGap = Math.abs(target.scale - current.scale);
+  const urgency = Math.min(scaleGap / 0.1, 5); // 0 = gentle, 5 = snappy
+  const adaptK = SPRING_K + urgency * 20;       // 12 → up to 112
+  const adaptD = SPRING_D + urgency * 10;       // 7 → up to 57
+
   for (const key of Object.keys(current)) {
     const displacement = target[key] - current[key];
-    const springForce = SPRING_K * displacement;
-    const dampingForce = SPRING_D * velocity[key];
+    const springForce = adaptK * displacement;
+    const dampingForce = adaptD * velocity[key];
     const acceleration = springForce - dampingForce;
     velocity[key] += acceleration * dt;
     current[key] += velocity[key] * dt;
@@ -656,15 +919,79 @@ function animate() {
     drawCrossSection(now / 1000);
   }
 
+  // Auto-zoom: push out during evolution, pull in during collapse/supernova.
+  const currentCamDist = camera.position.length();
+  let newDist = currentCamDist;
+  if (autoZoomEnabled) {
+    const desiredDist = Math.max(controls.minDistance, targetCameraZ);
+    const desiredDist2 = Math.max(desiredDist, currentCamDist); // never pull in
+    const gap = desiredDist2 - currentCamDist;
+    if (gap > 0.1) {
+      const camDir = camera.position.clone().normalize();
+      const rate = 0.3;
+      newDist = currentCamDist + gap * rate;
+      camera.position.copy(camDir.multiplyScalar(newDist));
+    }
+  }
+
+  // Star trails: radial streaks during auto-zoom (long-exposure effect).
+  if (starTrailMesh && starfieldMesh) {
+    const cameraMoved = Math.abs(newDist - currentCamDist);
+    const isZooming = autoZoomEnabled && cameraMoved > 0.05;
+
+    // Snap opacity on/off for a sharp warp-speed effect
+    const targetOpacity = isZooming ? 0.7 : 0;
+    trailOpacity += (targetOpacity - trailOpacity) * Math.min(1, dt * 10);
+    starTrailMesh.material.opacity = trailOpacity;
+    starTrailMesh.visible = trailOpacity > 0.005;
+
+    if (trailOpacity > 0.005) {
+      // Streak as a percentage of star distance — big moves = long streaks
+      const streakFraction = Math.min(0.3, cameraMoved * 0.8);
+      const camPos = camera.position;
+
+      const starPositions = starfieldMesh.geometry.attributes.position.array;
+      const trailPositions = starTrailMesh.geometry.attributes.position.array;
+      const count = starPositions.length / 3;
+
+      for (let i = 0; i < count; i++) {
+        const i3 = i * 3;
+        const i6 = i * 6;
+        const sx = starPositions[i3], sy = starPositions[i3 + 1], sz = starPositions[i3 + 2];
+
+        trailPositions[i6] = sx;
+        trailPositions[i6 + 1] = sy;
+        trailPositions[i6 + 2] = sz;
+
+        // Extend radially away from camera by a fraction of the star's distance
+        const dx = sx - camPos.x, dy = sy - camPos.y, dz = sz - camPos.z;
+        trailPositions[i6 + 3] = sx + dx * streakFraction;
+        trailPositions[i6 + 4] = sy + dy * streakFraction;
+        trailPositions[i6 + 5] = sz + dz * streakFraction;
+      }
+      starTrailMesh.geometry.attributes.position.needsUpdate = true;
+    }
+  }
+
+  // Update orbit controls limits — always allow zooming well beyond the star
+  controls.minDistance = Math.max(1.5, scale * 1.2);
+  controls.maxDistance = 120; // stay inside the starfield sphere (r=150)
+
   // Bloom strength — reduce when zoomed in so surface detail is visible
-  const dist = camera.position.length();
-  const distFactor = Math.max(0.2, Math.min(1.0, (dist - 2) / 4));
+  const dist = newDist;
+  const distFactor = Math.max(0.2, Math.min(1.0, (dist - scale * 2) / (scale * 4)));
   bloomPass.strength = current.bloom * distFactor;
 
   // Orbit controls
   controls.update();
 
-  if (!frozen) {
+  // End-of-life animation (supernova/collapse)
+  if (supernovaActive) {
+    updateEndOfLife(dt);
+    updatePhotons(dt);
+  }
+
+  if (!frozen && !supernovaActive) {
     // Photon flux
     updatePhotons(dt);
 
@@ -677,7 +1004,43 @@ function animate() {
     }
   }
 
+  // Black hole lensing + photon sphere
+  if (lensingPass) {
+    if (blackHoleActive) {
+      // Project BH position (origin) to screen space
+      const bhPos = new THREE.Vector3(0, 0, 0);
+      bhPos.project(camera);
+      const screenX = (bhPos.x + 1) / 2;
+      const screenY = (bhPos.y + 1) / 2;
+      lensingPass.uniforms.uBHScreenPos.value.set(screenX, screenY);
+
+      // Event horizon screen radius: project the star's visual scale to screen
+      const camDist = camera.position.length();
+      const fovRad = camera.fov * Math.PI / 180;
+      const screenH = 2 * camDist * Math.tan(fovRad / 2);
+      const bhScreenR = scale / screenH; // fraction of screen height
+      lensingPass.uniforms.uBHScreenRadius.value = bhScreenR;
+      lensingPass.uniforms.uAspect.value = camera.aspect;
+
+      // Fade lensing in smoothly
+      const curStr = lensingPass.uniforms.uStrength.value;
+      lensingPass.uniforms.uStrength.value = curStr + (1 - curStr) * Math.min(1, dt * 2);
+
+    } else {
+      // Fade lensing out
+      const curStr = lensingPass.uniforms.uStrength.value;
+      if (curStr > 0.001) {
+        lensingPass.uniforms.uStrength.value = curStr * Math.pow(0.01, dt);
+      } else {
+        lensingPass.uniforms.uStrength.value = 0;
+      }
+    }
+  }
+
   composer.render();
+
+  // Per-frame callback (scale bar, etc.)
+  if (onFrameCallback) onFrameCallback();
 }
 
 /**
@@ -685,7 +1048,20 @@ function animate() {
  */
 export function updateStarAppearance(temperature, radius, luminosity) {
   const rgb = temperatureToRGB(temperature);
-  const newScale = 0.5 * Math.pow(Math.max(radius, 0.05), 0.4);
+  currentPhysicalRadius = radius;
+
+  // Visual scale: continuous power law.
+  const r = Math.max(radius, 0.05);
+  const newScale = 0.5 * Math.pow(r, 0.7);
+
+  // Camera auto-zoom: let the star grow until it fills ~50% of the view,
+  // then zoom out aggressively to give plenty of runway.
+  const fillRatio = newScale / Math.max(camera.position.length(), 1);
+  if (fillRatio > 0.5) {
+    // Overshoot: zoom to where star fills only ~4% of the view.
+    // Capped to stay inside the starfield.
+    targetCameraZ = Math.min(100, Math.max(targetCameraZ, newScale / 0.04));
+  }
 
   // Detect if there's a meaningful change → trigger wobble
   const scaleDelta = Math.abs(newScale - target.scale);
@@ -744,6 +1120,114 @@ export function freezeStar() {
 
 export function unfreezeStar() {
   frozen = false;
+  supernovaActive = false;
+  supernovaTime = 0;
+  blackHoleActive = false;
+  remnantType = null;
+  // Restore brightness and targets that SN/WD collapse may have modified
+  if (starMaterial) {
+    starMaterial.uniforms.uBrightness.value = 1.0;
+  }
+  // Deactivate BH visuals
+  if (lensingPass) {
+    lensingPass.uniforms.uStrength.value = 0;
+  }
+  targetCameraZ = DEFAULT_CAMERA_Z;
+}
+
+// --- Supernova / collapse animation ---
+let supernovaActive = false;
+let supernovaTime = 0;
+let supernovaDuration = 3.0;
+let supernovaMass = 1.0;
+let supernovaStartScale = 1.0; // scale when SN triggered
+
+export function triggerEndOfLife(mass) {
+  supernovaActive = true;
+  supernovaTime = 0;
+  supernovaMass = mass;
+  supernovaDuration = mass >= 8 ? 6.0 : 5.0; // SN is longer and more dramatic
+  supernovaStartScale = current.scale;
+  // Don't zoom in — let the user manually zoom to see the remnant
+}
+
+function updateEndOfLife(dt) {
+  if (!supernovaActive) return false;
+  supernovaTime += dt;
+  const t = Math.min(supernovaTime / supernovaDuration, 1.0);
+
+  const BH_FINAL_SCALE = 0.15;  // small black sphere
+  const NS_FINAL_SCALE = 0.03;
+  const WD_FINAL_SCALE = 0.04;
+
+  if (supernovaMass >= 8) {
+    // Supernova: intense photon burst → collapse → lingering fade
+    if (t < 0.25) {
+      // Phase 1: BRIGHT flash — star flares white, massive photon shower
+      const burstT = t / 0.25;
+      photonEmissionRate = 500 + 1500 * Math.pow(burstT, 0.5); // ramps fast
+      photonSpeed = 0.4 + 0.8 * burstT;
+      starMaterial.uniforms.uBrightness.value = 1 + 5 * burstT; // very bright
+      // Flash to white
+      target.r = target.r * 0.9 + 1.0 * 0.1;
+      target.g = target.g * 0.9 + 1.0 * 0.1;
+      target.b = target.b * 0.9 + 1.0 * 0.1;
+    } else if (t < 0.6) {
+      // Phase 2: collapse — star shrinks, photons still blazing then fading
+      const shrinkT = (t - 0.25) / 0.35;
+      const finalScale = supernovaMass >= 25 ? BH_FINAL_SCALE : NS_FINAL_SCALE;
+      target.scale = supernovaStartScale * Math.pow(1 - shrinkT, 3) + finalScale * (1 - Math.pow(1 - shrinkT, 3));
+      starMaterial.uniforms.uBrightness.value = Math.max(0, (1 - shrinkT) * 4);
+      photonEmissionRate = Math.max(0, 1800 * Math.pow(1 - shrinkT, 0.5));
+      photonSpeed = 1.2 * (1 - shrinkT * 0.5);
+      target.r *= 0.93;
+      target.g *= 0.91;
+      target.b *= 0.88;
+    } else {
+      const fadeT = (t - 0.7) / 0.3;
+      const finalScale = supernovaMass >= 25 ? BH_FINAL_SCALE : NS_FINAL_SCALE;
+      target.scale = finalScale;
+      starMaterial.uniforms.uBrightness.value = 0;
+      photonEmissionRate = Math.max(0, 100 * (1 - fadeT));
+    }
+  } else {
+    // White dwarf: gentle shrink from start scale to tiny
+    const shrinkT = t;
+    target.scale = supernovaStartScale * Math.pow(1 - shrinkT, 2) + WD_FINAL_SCALE * (1 - Math.pow(1 - shrinkT, 2));
+    starMaterial.uniforms.uBrightness.value = 0.3 + 0.7 * (1 - shrinkT);
+    photonEmissionRate = Math.max(5, 200 * (1 - shrinkT));
+    target.r = target.r * 0.98 + 0.8 * 0.02;
+    target.g = target.g * 0.98 + 0.85 * 0.02;
+    target.b = target.b * 0.98 + 1.0 * 0.02;
+  }
+
+  if (t >= 1.0) {
+    supernovaActive = false;
+    frozen = true;
+    stopPhotons();
+    if (supernovaMass >= 25) {
+      target.scale = 0.15;
+      target.r = 0; target.g = 0; target.b = 0;
+      starMaterial.uniforms.uBrightness.value = 0;
+      blackHoleActive = true;
+      remnantType = 'blackhole';
+      currentPhysicalRadius = 0.00004;
+    } else if (supernovaMass >= 8) {
+      target.scale = 0.03;
+      target.r = 0.6; target.g = 0.75; target.b = 1.0;
+      starMaterial.uniforms.uBrightness.value = 2.5;
+      remnantType = 'neutronstar';
+      currentPhysicalRadius = 0.000015;
+    } else {
+      target.scale = 0.04;
+      target.r = 0.8; target.g = 0.85; target.b = 1.0;
+      starMaterial.uniforms.uBrightness.value = 0.6;
+      remnantType = 'whitedwarf';
+      currentPhysicalRadius = 0.009;
+    }
+    return true; // done — user can zoom in manually to see remnant
+  }
+  return false;
 }
 
 export function setStarfieldSpeed(speed) {
@@ -762,6 +1246,46 @@ export function getRendererElement() {
   return renderer?.domElement;
 }
 
+export function setAutoZoom(on) { autoZoomEnabled = on; }
+
+// Per-frame callback for things like scale bar updates
+let onFrameCallback = null;
+export function setOnFrameCallback(fn) { onFrameCallback = fn; }
+
 export function getCamera() { return camera; }
 export function getStarMesh() { return starMesh; }
 export function getCurrentScale() { return current.scale; }
+
+/**
+ * Get scale bar info: how many pixels correspond to 1 R☉ at the current zoom.
+ * Returns { pixelsPerRsun, suggestedLabel, suggestedWidth, physicalRadius }
+ */
+export function getScaleBarInfo() {
+  if (!camera || !renderer) return null;
+  const camDist = camera.position.length();
+  const fovRad = camera.fov * Math.PI / 180;
+  const viewH = renderer.domElement.clientHeight;
+
+  // Scene units per R☉: the star has visual scale `current.scale` at `currentPhysicalRadius` R☉
+  const unitsPerRsun = currentPhysicalRadius > 0.01 ? current.scale / currentPhysicalRadius : 0.5;
+
+  // Pixels per scene unit at the origin (z=0)
+  const pixPerUnit = viewH / (2 * camDist * Math.tan(fovRad / 2));
+
+  const pixPerRsun = unitsPerRsun * pixPerUnit;
+
+  // Choose a nice round number of R☉ that gives a bar of 60–150 pixels
+  const candidates = [0.1, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+  let bestVal = 1, bestPx = pixPerRsun;
+  for (const c of candidates) {
+    const px = c * pixPerRsun;
+    if (px >= 50 && px <= 160) {
+      bestVal = c;
+      bestPx = px;
+      break;
+    }
+  }
+
+  const label = bestVal >= 1 ? `${bestVal} R☉` : `${bestVal} R☉`;
+  return { pixelsPerRsun: pixPerRsun, suggestedLabel: label, suggestedWidth: bestPx, physicalRadius: currentPhysicalRadius };
+}

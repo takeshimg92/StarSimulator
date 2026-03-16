@@ -28,6 +28,22 @@ The singularity at $\\xi = 0$ is handled via L'Hôpital's rule. The solution is 
 These are the same relations used to draw the main-sequence band on the H-R diagram, ensuring consistency between the sliders and the diagram.`,
   },
   {
+    title: 'Evolutionary Tracks: MIST',
+    body: `When time evolution is enabled, the star's global parameters ($L$, $T_{\\text{eff}}$, $R$, composition, evolutionary phase) are read from pre-computed <b>MIST</b> (MESA Isochrones and Stellar Tracks) evolutionary tracks at solar metallicity.
+
+The simulator ships with 65 tracks spanning 0.1–300 $M_\\odot$, each containing $\\sim$300 data points from the pre-main sequence through the thermally-pulsing AGB or Wolf-Rayet phase. At runtime, the two tracks bracketing the user's chosen mass are interpolated at the current stellar age using binary search + linear interpolation.
+
+<b>Data source:</b> MIST v1.2 (Choi et al. 2016, Dotter 2016), computed with MESA r7503. Solar metallicity $[\\text{Fe/H}] = 0.00$, non-rotating ($v/v_{\\text{crit}} = 0$), Asplund et al. (2009) protosolar composition ($Y = 0.27$, $Z = 0.014$).
+
+<b>Columns used:</b> age, $\\log L$, $\\log T_{\\text{eff}}$, $\\log R$, $\\log T_c$, $\\log \\rho_c$, He core mass, center $X$ (H), center $Y$ (He), surface $X$, and evolutionary phase.
+
+<b>Phase codes:</b> $-1$ = pre-MS, $0$ = main sequence, $2$ = subgiant/RGB, $3$ = core He burning (horizontal branch), $4$ = early AGB, $5$ = TP-AGB, $6$ = post-AGB, $9$ = Wolf-Rayet.
+
+<b>Data volume:</b> 1.3 MB JSON ($\\sim$280 KB gzipped), loaded asynchronously at startup. The analytical two-zone model serves as a fallback if tracks are not yet loaded.
+
+<b>Limitation:</b> MIST tracks end at the TP-AGB or WR phase. The final remnant (white dwarf, neutron star, or black hole) is not modeled — the simulator displays the expected fate based on the initial mass.`,
+  },
+  {
     title: 'Time Evolution: Two-Zone Model',
     body: `The star is split into two composition zones: a <b>core</b> ($r/R \\leq 0.25$, mass fraction $f_{\\text{core}} = 0.35$) and an <b>envelope</b> ($r/R > 0.25$).
 
