@@ -196,6 +196,12 @@ export function initRenderer(container) {
   renderer.toneMappingExposure = 1.0;
   container.appendChild(renderer.domElement);
 
+  // If WebGL context is lost (common on mobile reload), force a hard reload
+  renderer.domElement.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    window.location.href = window.location.pathname + '?t=' + Date.now();
+  });
+
   // Post-processing: render → bloom → output
   composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
@@ -282,8 +288,9 @@ export function initRenderer(container) {
   addStarfield();
 
   const onResize = () => {
-    const w = container.clientWidth;
-    const h = container.clientHeight;
+    const w = container.clientWidth || window.innerWidth;
+    const h = container.clientHeight || window.innerHeight;
+    if (w < 1 || h < 1) return; // skip degenerate sizes
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
@@ -291,6 +298,9 @@ export function initRenderer(container) {
     bloomPass.resolution.set(w, h);
   };
   window.addEventListener('resize', onResize);
+  // On mobile reload, layout may not be ready at DOMContentLoaded — retry shortly
+  setTimeout(onResize, 100);
+  setTimeout(onResize, 500);
 
   animate();
 }

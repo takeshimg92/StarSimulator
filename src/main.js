@@ -520,9 +520,9 @@ async function init() {
     setSliceView(e.target.checked);
   });
 
-  // Reset button
+  // Reset button — force true reload (bypass mobile bfcache)
   document.getElementById('reset-btn').addEventListener('click', () => {
-    window.location.reload();
+    window.location.href = window.location.pathname + '?t=' + Date.now();
   });
 
   // Initial render
