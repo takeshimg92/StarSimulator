@@ -1,5 +1,6 @@
-import { initRenderer, updateStarAppearance, setSunglasses, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup, getScaleBarInfo, setOnFrameCallback, triggerEndOfLife, getZoneStructure, getRemnantType, setSpotActivity } from './star/renderer.js';
+import { initRenderer, updateStarAppearance, setSunglasses, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup, getScaleBarInfo, setOnFrameCallback, triggerEndOfLife, getZoneStructure, getRemnantType, setSpotActivity, setLightMode } from './star/renderer.js';
 import { computeProfiles } from './physics/stellar.js';
+import { constants } from './physics/constants.js';
 import { createSliders } from './ui/sliders.js';
 import { initHRDiagram, resizeHRCanvas, updateHR } from './plots/hrDiagram.js';
 import { initParticleSim, resizeParticleCanvas, updateParticleTemp, updateParticleComposition, setRemnantState } from './plots/particles.js';
@@ -46,11 +47,22 @@ function updateAgeDisplay() {
     (phaseName ? ` <span style="color:rgba(255,200,100,0.5);font-size:11px">&middot; ${phaseName}</span>` : '');
 }
 
+const _isMobile = () => window.innerWidth < 768;
+let _mobileDrawerOpen = false;
+
 function onParametersChanged({ mass, radius, temperature, hydrogen }, { wobble = true } = {}) {
   // Sync hydrogen slider to evolution only if user manually changed it
   // (not when time evolution is driving the slider)
   if (hydrogen !== undefined && !suppressHydrogenSync) {
     evolution.setComposition(hydrogen);
+  }
+
+  // Mobile fast path: only update star color + size while drawer is open
+  if (_isMobile() && _mobileDrawerOpen) {
+    const { sigma, R_sun } = constants;
+    const L = 4 * Math.PI * (radius * R_sun) ** 2 * sigma * temperature ** 4;
+    updateStarAppearance(temperature, radius, L, { wobble: false });
+    return;
   }
 
   const mu = evolution.getMu();
@@ -66,6 +78,7 @@ function onParametersChanged({ mass, radius, temperature, hydrogen }, { wobble =
   });
   evolution.setLuminosity(profiles.L);
   updateStarAppearance(temperature, radius, profiles.L, { wobble });
+
   updateParticleTemp(profiles.Tc);
   updateHR(temperature, profiles.L);
 
@@ -557,10 +570,16 @@ function initMobile(sliderControls) {
   function openDrawer() {
     drawer.classList.add('open');
     backdrop.classList.add('visible');
+    _mobileDrawerOpen = true;
+    setLightMode(true);
   }
   function closeDrawer() {
     drawer.classList.remove('open');
     backdrop.classList.remove('visible');
+    _mobileDrawerOpen = false;
+    setLightMode(false);
+    // Flush deferred updates now that drawer is closed
+    onParametersChanged(sliderControls.getValues(), { wobble: false });
   }
 
   if (drawerToggle) drawerToggle.addEventListener('click', openDrawer);
@@ -638,11 +657,11 @@ function initMobile(sliderControls) {
 
   // Drag handle to expand/collapse bottom panel
   // Drag handle: three states — minimized / default / expanded
-  const dragHandle = document.getElementById('mobile-drag-handle');
+  // Three-state bottom panel: minimized / default / expanded
   const rightPanel = document.getElementById('right-panel');
-  if (dragHandle && rightPanel) {
+  const viewport = document.getElementById('viewport');
+  if (rightPanel) {
     let startY = 0;
-    // States: 'minimized' | 'default' | 'expanded'
     let panelState = 'default';
 
     function setPanelState(state) {
@@ -650,14 +669,15 @@ function initMobile(sliderControls) {
       rightPanel.classList.remove('minimized-mobile', 'expanded-mobile');
       if (state === 'minimized') rightPanel.classList.add('minimized-mobile');
       if (state === 'expanded') rightPanel.classList.add('expanded-mobile');
-      requestAnimationFrame(() => {
+      // Resize canvases after transition completes
+      setTimeout(() => {
         resizeHRCanvas();
         resizeParticleCanvas();
         resizeSpeciesCanvas();
         if (state !== 'minimized') {
           onParametersChanged(sliderControls.getValues(), { wobble: false });
         }
-      });
+      }, 320); // slightly after the 0.3s CSS transition
     }
 
     function isStarTab() {
@@ -665,32 +685,49 @@ function initMobile(sliderControls) {
       return active && active.dataset.tab === 'star';
     }
 
-    dragHandle.addEventListener('touchstart', (e) => {
+    // Swipe on the entire right panel (not just the handle)
+    rightPanel.addEventListener('touchstart', (e) => {
       startY = e.touches[0].clientY;
     }, { passive: true });
 
-    dragHandle.addEventListener('touchend', (e) => {
+    rightPanel.addEventListener('touchend', (e) => {
       if (!isStarTab()) return;
       const endY = e.changedTouches[0].clientY;
       const dy = startY - endY; // positive = swiped up
+      if (Math.abs(dy) < 30) return; // too small
       if (dy > 30) {
-        // Swipe up: minimized → default → expanded
         if (panelState === 'minimized') setPanelState('default');
         else if (panelState === 'default') setPanelState('expanded');
       } else if (dy < -30) {
-        // Swipe down: expanded → default → minimized
         if (panelState === 'expanded') setPanelState('default');
         else if (panelState === 'default') setPanelState('minimized');
       }
     }, { passive: true });
 
-    // Tap cycles (star tab only): minimized → default → expanded → minimized
-    dragHandle.addEventListener('click', () => {
-      if (!isStarTab()) return;
-      if (panelState === 'minimized') setPanelState('default');
-      else if (panelState === 'default') setPanelState('expanded');
-      else setPanelState('minimized');
-    });
+    // Track horizontal start for distinguishing swipe directions
+    rightPanel.addEventListener('touchstart', (e) => {
+      if (e.target) e.target._touchStartX = e.touches[0].clientX;
+    }, { passive: true });
+
+    // Tap on the drag handle cycles state
+    const dragHandle = document.getElementById('mobile-drag-handle');
+    if (dragHandle) {
+      dragHandle.addEventListener('click', () => {
+        if (!isStarTab()) return;
+        if (panelState === 'minimized') setPanelState('default');
+        else if (panelState === 'default') setPanelState('expanded');
+        else setPanelState('minimized');
+      });
+    }
+
+    // Tap on viewport collapses expanded panel to default
+    if (viewport) {
+      viewport.addEventListener('click', () => {
+        if (isStarTab() && panelState === 'expanded') {
+          setPanelState('default');
+        }
+      });
+    }
   }
 
   // Carousel dot tracking via IntersectionObserver

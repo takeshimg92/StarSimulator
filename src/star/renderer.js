@@ -134,6 +134,8 @@ const velocity = { scale: 0, r: 0, g: 0, b: 0, bloom: 0 };
 
 const SPRING_K = 12;
 const SPRING_D = 7;
+const isMobile = () => window.innerWidth < 768;
+let lightMode = false; // when true, freeze animation (rotation, photons, shader time)
 
 // Auto-zoom: camera pulls back as the star grows
 const DEFAULT_CAMERA_Z = 5;
@@ -1087,26 +1089,34 @@ function animate() {
   const dt = Math.min((now - lastTime) / 1000, 0.05); // cap at 50ms
   lastTime = now;
 
-  // Adaptive spring: stiffer when the target is changing fast (rapid evolution).
-  // Measure how far the scale target is from current — large gap means we're
-  // falling behind and need to catch up.
-  const scaleGap = Math.abs(target.scale - current.scale);
-  const urgency = Math.min(scaleGap / 0.1, 5); // 0 = gentle, 5 = snappy
-  const adaptK = SPRING_K + urgency * 20;       // 12 → up to 112
-  const adaptD = SPRING_D + urgency * 10;       // 7 → up to 57
+  if (isMobile()) {
+    // Mobile: snap directly to target (no spring interpolation)
+    for (const key of Object.keys(current)) {
+      current[key] = target[key];
+      velocity[key] = 0;
+    }
+  } else {
+    // Desktop: smooth spring-damped interpolation
+    const scaleGap = Math.abs(target.scale - current.scale);
+    const urgency = Math.min(scaleGap / 0.1, 5);
+    const adaptK = SPRING_K + urgency * 20;
+    const adaptD = SPRING_D + urgency * 10;
 
-  for (const key of Object.keys(current)) {
-    const displacement = target[key] - current[key];
-    const springForce = adaptK * displacement;
-    const dampingForce = adaptD * velocity[key];
-    const acceleration = springForce - dampingForce;
-    velocity[key] += acceleration * dt;
-    current[key] += velocity[key] * dt;
+    for (const key of Object.keys(current)) {
+      const displacement = target[key] - current[key];
+      const springForce = adaptK * displacement;
+      const dampingForce = adaptD * velocity[key];
+      const acceleration = springForce - dampingForce;
+      velocity[key] += acceleration * dt;
+      current[key] += velocity[key] * dt;
+    }
   }
 
-  // Apply color and time
+  // Apply color; freeze shader time in light mode (stops convection/spot animation)
   starMaterial.uniforms.uColor.value.setRGB(current.r, current.g, current.b);
-  starMaterial.uniforms.uTime.value = now / 1000.0;
+  if (!lightMode) {
+    starMaterial.uniforms.uTime.value = now / 1000.0;
+  }
 
   // Apply scale with wobble
   let scale = current.scale;
@@ -1126,22 +1136,28 @@ function animate() {
   }
 
   // Sync cross-section with star scale and redraw canvas texture
-  if (crossSectionGroup && sliceEnabled) {
+  if (crossSectionGroup && sliceEnabled && !lightMode) {
     crossSectionGroup.scale.setScalar(scale);
     drawCrossSection(now / 1000);
   }
 
-  // Camera distance (used for bloom scaling below)
+  // Camera distance
   const currentCamDist = camera.position.length();
-  let newDist = currentCamDist;
 
   // Update orbit controls limits
   controls.minDistance = Math.max(1.5, scale * 1.2);
   controls.maxDistance = 600;
 
+  // Push camera out if it's inside the star (can happen on fast mass increase)
+  const camDist = camera.position.length();
+  if (camDist < scale * 1.3) {
+    const pushDist = scale * 2.5;
+    camera.position.normalize().multiplyScalar(pushDist);
+  }
+
   // Bloom strength — reduce when zoomed in so surface detail is visible
-  const dist = newDist;
-  const distFactor = Math.max(0.2, Math.min(1.0, (dist - scale * 2) / (scale * 4)));
+  const dist = camera.position.length();
+  const distFactor = Math.max(0.0, Math.min(1.0, (dist - scale * 2) / (scale * 4)));
   bloomPass.strength = current.bloom * distFactor;
 
   // Orbit controls
@@ -1158,7 +1174,7 @@ function animate() {
     updateNebula(dt);
   }
 
-  if (!frozen && !supernovaActive) {
+  if (!frozen && !supernovaActive && !lightMode) {
     // Photon flux
     updatePhotons(dt);
 
@@ -1222,7 +1238,7 @@ export function updateStarAppearance(temperature, radius, luminosity, { wobble =
   const newScale = 0.5 * Math.pow(r, 0.7);
 
   // Detect if there's a meaningful change → trigger wobble (only for manual changes)
-  if (wobble) {
+  if (wobble && !lightMode) {
     const scaleDelta = Math.abs(newScale - target.scale);
     const colorDelta = Math.abs(rgb.r - target.r) + Math.abs(rgb.g - target.g) + Math.abs(rgb.b - target.b);
     if (scaleDelta > 0.02 || colorDelta > 0.05) {
@@ -1245,7 +1261,9 @@ export function updateStarAppearance(temperature, radius, luminosity, { wobble =
   target.bloom = baseBloom;
 
   // Photon emission rate scales with luminosity
-  photonEmissionRate = Math.max(30, Math.min(1800, 200 + logL * 300));
+  const maxPhotons = isMobile() ? 600 : 1800;
+  const basePhotons = isMobile() ? 80 : 200;
+  photonEmissionRate = Math.max(15, Math.min(maxPhotons, basePhotons + logL * (isMobile() ? 100 : 300)));
 
   // Photon speed encodes luminosity: gentle at 1 L☉, faster at high L
   // logL=0 → 0.15, logL=4 → 0.6
@@ -1267,6 +1285,8 @@ export function setSpotsVisible(visible) {
     starMaterial.uniforms.uSpotsVisible.value = visible ? 1.0 : 0.0;
   }
 }
+
+export function setLightMode(on) { lightMode = on; }
 
 export function setSpotActivity(density, size) {
   if (starMaterial) {

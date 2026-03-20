@@ -38,10 +38,17 @@ export function createSliders(container, onChange) {
   input.step = def.step;
   input.value = def.initial;
 
+  // Throttle slider updates on mobile to avoid jank
+  let rafPending = false;
   input.addEventListener('input', () => {
     const mass = parseFloat(input.value);
     valueDisplay.textContent = def.format(mass);
-    onChange(getValuesForMass(mass));
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      onChange(getValuesForMass(mass));
+    });
   });
 
   wrapper.appendChild(labelRow);

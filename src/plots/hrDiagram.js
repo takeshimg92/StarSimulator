@@ -277,7 +277,7 @@ function draw(currentLogT, currentLogL, currentT) {
   for (const t of tempTicks) {
     const logT = Math.log10(t);
     const p = toCanvas(logT, logLMax);
-    const label = t >= 10000 ? `${t / 1000}k` : `${t}`;
+    const label = t >= 1000 ? `${t / 1000}k` : `${t}`;
     const textW = ctx.measureText(label).width;
     ctx.fillText(label, p.x - textW / 2, PAD.top - 1);
   }
