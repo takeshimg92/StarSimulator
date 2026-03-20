@@ -44,6 +44,12 @@ npx vercel --prod
 - `.vercelignore` excludes the raw MIST data files (`data/mist_raw/`, ~400 MB) from upload — only the processed `src/data/mist_tracks.json` (1.3 MB) is needed at runtime
 - The processed MIST tracks JSON is committed to git and bundled by Vite as a static asset
 
+## Backlog (v2)
+
+- **Stellar winds:** late-stage mass loss for massive stars (Wolf-Rayet, AGB winds)
+- **Proto-star formation:** pre-main-sequence contraction phase (Hayashi/Henyey tracks)
+- **More realistic nebulae:** structured planetary nebulae and supernova remnants with filaments, asymmetry, and color gradients
+
 ## Data attribution
 
 Stellar evolution tracks from MIST v1.2 (solar metallicity, non-rotating):
