@@ -11,18 +11,14 @@ const sections = [
   {
     title: 'A Quick Glossary',
     body: `Before diving in, here are a few terms that come up frequently:
-<br><br>
-<b>- Luminosity ($L$)</b> — the total power (energy per second) radiated by a star, measured in watts. We often express it relative to the Sun: $L_\\odot \\approx 3.83 \\times 10^{26}$ W.
-<br>
-<b>- Effective temperature ($T_{\\text{eff}}$)</b> — the surface temperature that a perfect blackbody of the same size would need to produce the star's luminosity.
-<br>
-<b>- Radius ($R$)</b> — the star's photospheric radius, where light escapes. Measured in solar radii: $R_\\odot \\approx 6.96 \\times 10^8$ m.
-<br>
-<b>- Metallicity ($Z$)</b> — the fraction of the star's mass in elements heavier than helium ("metals" in astronomy — everything from carbon to iron and beyond).
-<br>
-<b>- Main sequence</b> — the long, stable phase of a star's life when it fuses hydrogen into helium in its core. Our Sun is currently on the main sequence.
-<br>
-<b>- H-R diagram</b> — a plot of luminosity vs. surface temperature (temperature increasing to the left). A star's position on this diagram reveals its evolutionary state.`,
+<ul>
+<li><b>Luminosity ($L$)</b> — the total power (energy per second) radiated by a star, measured in watts. We often express it relative to the Sun: $L_\\odot \\approx 3.83 \\times 10^{26}$ W.</li>
+<li><b>Effective temperature ($T_{\\text{eff}}$)</b> — the surface temperature that a perfect blackbody of the same size would need to produce the star's luminosity.</li>
+<li><b>Radius ($R$)</b> — the star's photospheric radius, where light escapes. Measured in solar radii: $R_\\odot \\approx 6.96 \\times 10^8$ m.</li>
+<li><b>Metallicity ($Z$)</b> — the fraction of the star's mass in elements heavier than helium ("metals" in astronomy — everything from carbon to iron and beyond).</li>
+<li><b>Main sequence</b> — the long, stable phase of a star's life when it fuses hydrogen into helium in its core. Our Sun is currently on the main sequence.</li>
+<li><b>H-R diagram</b> — a plot of luminosity vs. surface temperature (temperature increasing to the left). A star's position on this diagram reveals its evolutionary state.</li>
+</ul>`,
   },
   {
     title: 'What Holds a Star Together?',
@@ -58,16 +54,13 @@ Luminosity increases outward from the core as nuclear reactions add energy:`,
   {
     title: 'How Energy Gets Out: Radiation vs. Convection',
     body: `Energy produced in the core must travel outward to the surface. There are two ways this happens:
-<br>
-<b>- Radiation:</b> photons bounce from atom to atom, slowly diffusing outward. In radiative zones, the temperature gradient is:`,
+<ul><li><b>Radiation:</b> photons bounce from atom to atom, slowly diffusing outward. In radiative zones, the temperature gradient is:</li></ul>`,
     equation: String.raw`\frac{dT}{dr} = -\frac{3\,\kappa\,\rho\,L}{64\pi\sigma\,r^2\,T^3}`,
     after: `where $\\kappa$ is the opacity — how effectively the gas blocks light.
-<br>
-<b>- Convection:</b> when the temperature gradient becomes too steep (the <b>Schwarzschild criterion</b>), radiation can't carry the energy fast enough. Instead, hot gas rises and cool gas sinks — like a boiling pot of water. The granulation pattern visible on the star's surface is the top of these convection cells.
+<ul><li><b>Convection:</b> when the temperature gradient becomes too steep (the <b>Schwarzschild criterion</b>), radiation can't carry the energy fast enough. Instead, hot gas rises and cool gas sinks — like a boiling pot of water. The granulation pattern visible on the star's surface is the top of these convection cells.</li></ul>
 
 For Sun-like stars: the core is radiative, and the outer ~30% is convective. For massive stars ($M > 1.3\\,M_\\odot$), it's the reverse: the core is convective and the envelope is radiative.
-
-<br>
+<br><br>
 In the simulator, you can toggle the slice view to show the convective and radiative zones. The temperature gradient is much steeper in the convective zone, which is why it looks so different from the smooth radiative interior.`,
     refs: [
       { text: 'Wikipedia: Convection zone', url: 'https://en.wikipedia.org/wiki/Convection_zone' },
@@ -134,10 +127,10 @@ The fusion rate depends on two competing factors: the Maxwell-Boltzmann distribu
     after: `Here $n_i$ and $n_{i+1}$ are the number densities in consecutive ionization states, $\\chi_i$ is the energy needed to remove the next electron, and $\\Lambda$ is a quantum-mechanical length scale.
 
 For hydrogen ($\\chi = 13.6$ eV), the core is fully ionized. But in the outer envelope ($T \\sim 5000$–$10{,}000$ K), hydrogen transitions from neutral to ionized — and this has major consequences:`,
-    after2: `<b>- Opacity:</b> partially ionized hydrogen absorbs radiation very effectively (via H$^-$ ions), making it hard for photons to escape.
-<br>
-<b>- Convection:</b> this high opacity steepens the temperature gradient, triggering convection — which is why Sun-like stars have boiling outer layers.
-
+    after2: `<ul>
+<li><b>Opacity:</b> partially ionized hydrogen absorbs radiation very effectively (via H$^-$ ions), making it hard for photons to escape.</li>
+<li><b>Convection:</b> this high opacity steepens the temperature gradient, triggering convection — which is why Sun-like stars have boiling outer layers.</li>
+</ul>
 The ionization energy of hydrogen ultimately determines why stars below $\\sim$1.3 $M_\\odot$ have convective envelopes and more massive stars do not.`,
     refs: [
       { text: 'Wikipedia: Saha ionization equation', url: 'https://en.wikipedia.org/wiki/Saha_ionization_equation' },

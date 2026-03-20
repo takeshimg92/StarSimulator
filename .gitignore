@@ -2,7 +2,7 @@ node_modules/
 dist/
 .vite/
 
-CLAUDE.md
+*CLAUDE.md
 
 # MIST raw data (large, not needed at runtime)
 data/mist_raw/

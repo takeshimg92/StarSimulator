@@ -10,16 +10,13 @@ const sections = [
     body: `When time evolution is enabled, the star's global parameters ($L$, $T_{\\text{eff}}$, $R$, composition, evolutionary phase) are read from pre-computed <b>MIST</b> (MESA Isochrones and Stellar Tracks) evolutionary tracks at solar metallicity. This is the backbone of the simulator — it provides physically accurate evolution from birth to death for any star mass.
 
 The simulator ships with 65 tracks spanning 0.1–300 $M_\\odot$, each containing $\\sim$300 data points from the pre-main sequence through the thermally-pulsing AGB or Wolf-Rayet phase. At runtime, the two tracks bracketing the user's chosen mass are interpolated at the current stellar age using binary search + linear interpolation.
-<br>
-<b>- Data source:</b> MIST v1.2 (Choi et al. 2016, Dotter 2016), computed with MESA r7503. Solar metallicity $[\\text{Fe/H}] = 0.00$, non-rotating ($v/v_{\\text{crit}} = 0$), Asplund et al. (2009) protosolar composition ($Y = 0.27$, $Z = 0.014$).
-<br>
-<b>- Columns used:</b> age, $\\log L$, $\\log T_{\\text{eff}}$, $\\log R$, $\\log T_c$, $\\log \\rho_c$, He core mass, center $X$ (H), center $Y$ (He), surface $X$, and evolutionary phase.
-<br>
-<b>- Phase codes:</b> $-1$ = pre-MS, $0$ = main sequence, $2$ = subgiant/RGB, $3$ = core He burning (horizontal branch), $4$ = early AGB, $5$ = TP-AGB, $6$ = post-AGB, $9$ = Wolf-Rayet.
-<br>
-<b>- Data volume:</b> 1.3 MB JSON ($\\sim$280 KB gzipped), loaded asynchronously at startup. An analytical two-zone model serves as a fallback if tracks have not yet loaded.
-<br>
-<b>- Limitation:</b> MIST tracks end at the TP-AGB or WR phase. The final remnant (white dwarf, neutron star, or black hole) is not modeled by MIST — the simulator infers the expected fate from the initial mass and triggers an end-of-life animation.`,
+<ul>
+<li><b>Data source:</b> MIST v1.2 (Choi et al. 2016, Dotter 2016), computed with MESA r7503. Solar metallicity $[\\text{Fe/H}] = 0.00$, non-rotating ($v/v_{\\text{crit}} = 0$), Asplund et al. (2009) protosolar composition ($Y = 0.27$, $Z = 0.014$).</li>
+<li><b>Columns used:</b> age, $\\log L$, $\\log T_{\\text{eff}}$, $\\log R$, $\\log T_c$, $\\log \\rho_c$, He core mass, center $X$ (H), center $Y$ (He), surface $X$, and evolutionary phase.</li>
+<li><b>Phase codes:</b> $-1$ = pre-MS, $0$ = main sequence, $2$ = subgiant/RGB, $3$ = core He burning (horizontal branch), $4$ = early AGB, $5$ = TP-AGB, $6$ = post-AGB, $9$ = Wolf-Rayet.</li>
+<li><b>Data volume:</b> 1.3 MB JSON ($\\sim$280 KB gzipped), loaded asynchronously at startup. An analytical two-zone model serves as a fallback if tracks have not yet loaded.</li>
+<li><b>Limitation:</b> MIST tracks end at the TP-AGB or WR phase. The final remnant (white dwarf, neutron star, or black hole) is not modeled by MIST — the simulator infers the expected fate from the initial mass and triggers an end-of-life animation.</li>
+</ul>`,
   },
   {
     title: 'Composition Tracking',
@@ -41,9 +38,10 @@ The singularity at $\\xi = 0$ is handled via L'Hôpital's rule. The solution is 
     equation2: String.raw`\rho(r) = \rho_c\,\theta^3, \quad T(r) = T_c\,\theta, \quad P(r) = P_c\,\theta^4`,
     after2: `where the central values $\\rho_c$, $T_c$, $P_c$ are derived from $M$, $R$, and the ideal gas law with mean molecular weight $\\mu \\approx 0.62$.
 <br>
-<b>- Photosphere blending:</b> the $n=3$ polytrope has $\\theta \\to 0$ at the surface, giving $T \\to 0$ — unphysical, since the real photosphere has $T = T_{\\text{eff}}$. For $r/R > 0.8$, the temperature profile is smoothstep-blended toward $T_{\\text{eff}}$: $T(r) = T_{\\text{poly}}(r) \\cdot (1-s) + T_{\\text{eff}} \\cdot s$, where $s$ is a cubic smoothstep of $(r/R - 0.8)/0.2$. This preserves the accurate interior profile while avoiding the unphysical surface discontinuity.
-<br><br>
-<b>- Caveat: why $n = 3$ everywhere?</b> Real stars are not single polytropes. Radiative zones (stellar cores of solar-type stars, envelopes of massive stars) are well approximated by $n = 3$. Convective zones (envelopes of solar-type stars, cores of massive stars, fully convective M dwarfs) are closer to $n = 3/2$ (adiabatic ideal gas). A composite model with different $n$ in different zones would be more accurate, but the visual difference in the profiles is subtle. We use $n = 3$ throughout as a reasonable single approximation — the global parameters ($L$, $T_{\\text{eff}}$, $R$) are driven by MIST tracks regardless, so the polytropic solution only shapes the interior profiles shown in the slice view.`,
+<ul>
+<li><b>Photosphere blending:</b> the $n=3$ polytrope has $\\theta \\to 0$ at the surface, giving $T \\to 0$ — unphysical, since the real photosphere has $T = T_{\\text{eff}}$. For $r/R > 0.8$, the temperature profile is smoothstep-blended toward $T_{\\text{eff}}$: $T(r) = T_{\\text{poly}}(r) \\cdot (1-s) + T_{\\text{eff}} \\cdot s$, where $s$ is a cubic smoothstep of $(r/R - 0.8)/0.2$. This preserves the accurate interior profile while avoiding the unphysical surface discontinuity.</li>
+<li><b>Caveat: why $n = 3$ everywhere?</b> Real stars are not single polytropes. Radiative zones (stellar cores of solar-type stars, envelopes of massive stars) are well approximated by $n = 3$. Convective zones (envelopes of solar-type stars, cores of massive stars, fully convective M dwarfs) are closer to $n = 3/2$ (adiabatic ideal gas). A composite model with different $n$ in different zones would be more accurate, but the visual difference in the profiles is subtle. We use $n = 3$ throughout as a reasonable single approximation — the global parameters ($L$, $T_{\\text{eff}}$, $R$) are driven by MIST tracks regardless, so the polytropic solution only shapes the interior profiles shown in the slice view.</li>
+</ul>`,
   },
   {
     title: 'Main-Sequence Scaling Relations',
@@ -84,16 +82,13 @@ The exponent 13 encodes the difference in temperature sensitivity between the CN
 <b>Render → Bloom → Tint (sunglasses) → Output</b>
 
 The fragment shader computes several layers of surface detail:`,
-    after: `<b>1. Limb darkening</b> — quadratic law: $I(\\mu) = 1 - u(1-\\mu) - 0.2(1-\\mu)^2$ where $\\mu = \\cos\\theta$.
-<br>
-<b>2. Granulation</b> — fine-scale Worley (cellular) noise simulating convection cells. Cell edges appear as dark lanes. Animated to slowly churn over time.
-<br>
-<b>3. Sunspots</b> — two overlapping Worley patterns whose scale and threshold are driven by \`uSpotDensity\` and \`uSpotSize\` uniforms (see "Starspot Activity Model" below). Dark umbrae (8% brightness) with brownish penumbrae drift slowly across the surface.
-<br>
-<b>4. Faculae</b> — bright annular regions surrounding spots, with enhanced brightness near the limb (matching observations).
-<br>
-<b>5. Surface displacement</b> — the vertex shader perturbs vertices along their normals using multi-octave value noise, so the star isn't a perfect sphere.
-<br>
+    after: `<ul>
+<li><b>Limb darkening</b> — quadratic law: $I(\\mu) = 1 - u(1-\\mu) - 0.2(1-\\mu)^2$ where $\\mu = \\cos\\theta$.</li>
+<li><b>Granulation</b> — fine-scale Worley (cellular) noise simulating convection cells. Cell edges appear as dark lanes. Animated to slowly churn over time.</li>
+<li><b>Sunspots</b> — two overlapping Worley patterns whose scale and threshold are driven by \`uSpotDensity\` and \`uSpotSize\` uniforms (see "Starspot Activity Model" below). Dark umbrae (8% brightness) with brownish penumbrae drift slowly across the surface.</li>
+<li><b>Faculae</b> — bright annular regions surrounding spots, with enhanced brightness near the limb (matching observations).</li>
+<li><b>Surface displacement</b> — the vertex shader perturbs vertices along their normals using multi-octave value noise, so the star isn't a perfect sphere.</li>
+</ul>
 All surface features are animated via time-dependent noise offsets.
 
 <b>Smooth transitions:</b> all visual parameter changes (color, size, bloom) use a spring-damped system ($\\ddot{x} = K(x_{\\text{target}} - x) - D\\dot{x}$, with $K=12$, $D=7$) rather than instant snapping. Large manual parameter changes trigger a brief asymmetric wobble; this wobble is suppressed during time evolution and scrubbing for a smooth cinematic feel.`,
@@ -101,20 +96,16 @@ All surface features are animated via time-dependent noise offsets.
   {
     title: 'Starspot Activity Model',
     body: `Starspot coverage varies dramatically across spectral types. The simulator drives two shader uniforms — <b>uSpotDensity</b> (how many Worley cells become spots) and <b>uSpotSize</b> (Worley cell scale) — as functions of stellar mass and age.
-<br>
-<b>Mass dependence</b> (convection zone structure):`,
-    after: `
-
-- $M < 0.35\\,M_\\odot$ (fully convective M dwarfs): high coverage — turbulent dynamo throughout the star.
-<br>
-- $0.35$–$0.8\\,M_\\odot$ (K dwarfs): moderate — deep convective envelopes with strong tachocline shear.
-<br>
-- $0.8$–$1.3\\,M_\\odot$ (solar-type, G/F): subtle ($\\sim$1% coverage) — thin convective envelope, moderate dynamo.
-<br>
-- $> 1.3\\,M_\\odot$ (A/B/O stars): minimal to none — radiative envelopes lack the convective motions needed to sustain a dynamo.
 <br><br>
+<b>Mass dependence</b> (convection zone structure):`,
+    after: `<ul>
+<li>$M < 0.35\\,M_\\odot$ (fully convective M dwarfs): high coverage — turbulent dynamo throughout the star.</li>
+<li>$0.35$–$0.8\\,M_\\odot$ (K dwarfs): moderate — deep convective envelopes with strong tachocline shear.</li>
+<li>$0.8$–$1.3\\,M_\\odot$ (solar-type, G/F): subtle ($\\sim$1% coverage) — thin convective envelope, moderate dynamo.</li>
+<li>$> 1.3\\,M_\\odot$ (A/B/O stars): minimal to none — radiative envelopes lack the convective motions needed to sustain a dynamo.</li>
+</ul>
 <b>Age dependence:</b> young stars rotate faster and are more magnetically active. As they age, magnetic braking via stellar winds transfers angular momentum outward, spinning the star down. The activity factor decreases as $1 - 0.6 \\times (\\text{age}/\\text{max age})$, never reaching zero (even old stars retain residual cycles).
-
+<br><br>
 In the shader, the density uniform controls Worley noise smoothstep thresholds (lower threshold = more cells pass as spots), while the size uniform controls the Worley cell scale (larger cells = bigger spots for low-mass stars).`,
     refs: [
       { text: 'Berdyugina (2005) — Starspots: a key to the stellar dynamo', url: 'https://doi.org/10.12942/lrsp-2005-8' },
@@ -131,16 +122,13 @@ A mild saturation boost is applied for educational visibility: 1.4$\\times$ for 
     body: `The background starfield uses real stellar positions from the <b>Yale Bright Star Catalog</b> (BSC5), containing 9,096 stars with visual magnitude $\\lesssim 8$.
 
 Each star's right ascension and declination are converted to a unit vector on the celestial sphere and placed at $r = 900$ (well beyond the maximum camera distance of 600). The <b>B-V color index</b> is mapped to RGB via a piecewise approximation of the spectral sequence:`,
-    after: `O/B stars ($B\\!-\\!V < 0$): blue-white.
-<br>    
-- A/F stars ($0 < B\\!-\\!V < 0.4$): white to yellow-white.
-<br>
-- G stars ($0.4 < B\\!-\\!V < 0.8$): yellow (the Sun has $B\\!-\\!V \\approx 0.65$).
-<br>
-- K stars ($0.8 < B\\!-\\!V < 1.4$): orange.
-<br>
-- M stars ($B\\!-\\!V > 1.4$): red.
-<br>
+    after: `<ul>
+<li>O/B stars ($B\\!-\\!V < 0$): blue-white.</li>
+<li>A/F stars ($0 < B\\!-\\!V < 0.4$): white to yellow-white.</li>
+<li>G stars ($0.4 < B\\!-\\!V < 0.8$): yellow (the Sun has $B\\!-\\!V \\approx 0.65$).</li>
+<li>K stars ($0.8 < B\\!-\\!V < 1.4$): orange.</li>
+<li>M stars ($B\\!-\\!V > 1.4$): red.</li>
+</ul>
 Brightness scales with apparent magnitude: brighter stars have higher RGB values. A random fallback starfield (4,000 points) is used if the catalog fails to load.`,
     refs: [
       { text: 'Hoffleit & Jaschek — Bright Star Catalogue, 5th ed.', url: 'https://heasarc.gsfc.nasa.gov/W3Browse/star-catalog/bsc5p.html' },
@@ -149,13 +137,11 @@ Brightness scales with apparent magnitude: brighter stars have higher RGB values
   {
     title: 'Slice View & Cross-Section',
     body: `The "Show Slice" toggle uses a custom GLSL uniform to discard fragments where $z_{\\text{world}} > 0$, cutting away the front hemisphere. A flat 512$\\times$512 canvas texture at $z = 0$ renders the interior cross-section:
-<br>
-<b>  - Radial temperature gradient:</b> 80 concentric annuli are drawn, each colored by mapping the Lane-Emden temperature profile through the blackbody-to-RGB function. This produces a smooth gradient from white-yellow at the center ($\\sim$15 MK) to deep orange-red at the surface.
-<br>
-<b>  - Zone boundaries:</b> a solid ring at $r/R = 0.25$ marks the core boundary; a dashed ring at $r/R = 0.70$ marks the onset of convection.
-<br>
-<b>  - Convection cells:</b> 14 radial plume/lane pairs are animated in the $r/R > 0.70$ annular region. Bright wedges (rising hot plasma) alternate with dark wedges (sinking cooled plasma), with sinusoidal pulsation for visual variety. Alternating cells rotate in opposite directions.
-<br>
+<ul>
+<li><b>Radial temperature gradient:</b> 80 concentric annuli are drawn, each colored by mapping the Lane-Emden temperature profile through the blackbody-to-RGB function. This produces a smooth gradient from white-yellow at the center ($\\sim$15 MK) to deep orange-red at the surface.</li>
+<li><b>Zone boundaries:</b> a solid ring at $r/R = 0.25$ marks the core boundary; a dashed ring at $r/R = 0.70$ marks the onset of convection.</li>
+<li><b>Convection cells:</b> 14 radial plume/lane pairs are animated in the $r/R > 0.70$ annular region. Bright wedges (rising hot plasma) alternate with dark wedges (sinking cooled plasma), with sinusoidal pulsation for visual variety. Alternating cells rotate in opposite directions.</li>
+</ul>
 The canvas texture is re-drawn every frame when slice view is active, and uploaded to the GPU via \`CanvasTexture\`.`,
   },{
     title: 'Particle Simulation',
@@ -188,12 +174,11 @@ Up to 500 past positions are stored as a trail. Older points fade in opacity, an
     body: `When a star dies, an expanding particle shell visualizes the ejected material. The system uses 1,200 particles spawned at the star's surface at the moment of death.
 
 <b>Planetary nebulae</b> ($M < 8\\,M_\\odot$): 720 particles drift outward slowly with drag deceleration (factor 0.992/frame), settling into a permanent shell. Colors are sampled from three emission lines:`,
-    after: `<b>- O III</b> (green-blue, 40%): $\\lambda = 495.9, 500.7$ nm — the dominant optical emission.
-<br>
-<b>- H-alpha</b> (red/pink, 30%): $\\lambda = 656.3$ nm — recombining hydrogen.
-<br>
-<b>- N II</b> (red-orange, 30%): $\\lambda = 654.8, 658.4$ nm — nitrogen forbidden lines.
-
+    after: `<ul>
+<li><b>O III</b> (green-blue, 40%): $\\lambda = 495.9, 500.7$ nm — the dominant optical emission.</li>
+<li><b>H-alpha</b> (red/pink, 30%): $\\lambda = 656.3$ nm — recombining hydrogen.</li>
+<li><b>N II</b> (red-orange, 30%): $\\lambda = 654.8, 658.4$ nm — nitrogen forbidden lines.</li>
+</ul>
 <b>Supernova remnants</b> ($M \\geq 8\\,M_\\odot$): all 1,200 particles with faster initial velocities (Crab-like blast wave). Colors are hotter: blues, purples, and fiery reds. Both types persist indefinitely and are cleared when the user scrubs backward in time.`,
     refs: [
       { text: 'Wikipedia: Planetary nebula', url: 'https://en.wikipedia.org/wiki/Planetary_nebula' },
