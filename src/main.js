@@ -529,6 +529,9 @@ async function init() {
   onParametersChanged(sliderControls.getValues());
   updateAgeDisplay();
   syncPanelBottom();
+  // Re-sync after layout settles (mobile reload may have delayed paint)
+  setTimeout(syncPanelBottom, 100);
+  setTimeout(syncPanelBottom, 500);
 
   // Tooltips
   initTooltips();

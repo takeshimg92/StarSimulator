@@ -1367,10 +1367,8 @@ export function triggerEndOfLife(mass) {
   supernovaDuration = mass >= 8 ? 6.0 : 5.0; // SN is longer and more dramatic
   supernovaStartScale = current.scale;
 
-  // Nebula remnant: planetary nebula for low-mass, supernova remnant for massive
-  if (mass < 8) {
-    startNebula(current.scale, 'planetary');
-  } else {
+  // Nebula remnant: supernova remnant for massive stars only
+  if (mass >= 8) {
     startNebula(current.scale, 'supernova');
   }
 }
