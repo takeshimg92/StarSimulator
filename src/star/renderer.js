@@ -3,7 +3,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { starVertexShader, starFragmentShader } from './shaders.js';
 import { temperatureToRGB } from '../physics/blackbody.js';
@@ -141,10 +141,7 @@ let targetCameraZ = DEFAULT_CAMERA_Z;
 let currentPhysicalRadius = 1.0; // R☉, for scale bar
 let autoZoomEnabled = false; // only true during time evolution
 
-// Star trail lines (long-exposure effect during auto-zoom)
-let starTrailMesh = null;
-let prevCameraPos = null;
-let trailOpacity = 0; // fades in/out
+// (star trail mesh removed — auto-zoom disabled)
 
 // Black hole / remnant state
 let blackHoleActive = false;
@@ -167,6 +164,13 @@ let photonEmissionRate = 200;
 let photonAccum = 0;
 let photonSpeed = 0.2; // base speed, scales with luminosity
 
+// --- Planetary nebula particle system ---
+const MAX_NEBULA = 1200;
+let nebulaMesh;
+let nebulaParticles = [];
+let nebulaActive = false;
+let nebulaStartScale = 1.0; // star's scale when nebula spawns
+
 export function initRenderer(container) {
   scene = new THREE.Scene();
 
@@ -174,7 +178,7 @@ export function initRenderer(container) {
     45,
     container.clientWidth / container.clientHeight,
     0.1,
-    1000
+    2000
   );
   camera.position.z = 5;
 
@@ -214,6 +218,8 @@ export function initRenderer(container) {
       uColor: { value: new THREE.Color(1, 0.85, 0.6) },
       uLimbDarkeningCoeff: { value: 0.6 },
       uSpotsVisible: { value: 1.0 },
+      uSpotDensity: { value: 0.5 },  // 0 = no spots, 1 = heavy coverage
+      uSpotSize: { value: 0.5 },     // 0 = tiny, 1 = large
       uBrightness: { value: 1.0 },
       uTint: { value: new THREE.Vector3(1, 1, 1) },
       uTime: { value: 0.0 },
@@ -252,17 +258,19 @@ export function initRenderer(container) {
   scene.add(crossSectionGroup);
 
   // Orbit controls
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.minDistance = 1.5;
-  controls.maxDistance = 20;
-  controls.enablePan = false; // keep star centered
-  controls.rotateSpeed = 0.5;
+  controls = new TrackballControls(camera, renderer.domElement);
+  controls.rotateSpeed = 2.0;
   controls.zoomSpeed = 0.8;
+  controls.noPan = true;
+  controls.noZoom = false;
+  controls.minDistance = 1.5;
+  controls.maxDistance = 600;
+  controls.staticMoving = false;
+  controls.dynamicDampingFactor = 0.15;
 
   // Photon flux particles
   initPhotonSystem();
+  initNebulaSystem();
 
   addStarfield();
 
@@ -353,14 +361,14 @@ function updatePhotons(dt) {
     if (!p.active) {
       positions[i * 3] = 0;
       positions[i * 3 + 1] = 0;
-      positions[i * 3 + 2] = 1000; // move offscreen
+      positions[i * 3 + 2] = 99999; // move far offscreen (beyond far plane)
       continue;
     }
 
     p.life -= dt;
     if (p.life <= 0) {
       p.active = false;
-      positions[i * 3 + 2] = 1000;
+      positions[i * 3 + 2] = 99999;
       continue;
     }
 
@@ -382,82 +390,286 @@ function updatePhotons(dt) {
   photonMesh.material.opacity = 0.6;
 }
 
+// --- Planetary nebula ---
+
+function initNebulaSystem() {
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(MAX_NEBULA * 3);
+  const colors = new Float32Array(MAX_NEBULA * 3);
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const material = new THREE.PointsMaterial({
+    size: 0.035,
+    sizeAttenuation: true,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.75,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  nebulaMesh = new THREE.Points(geometry, material);
+  scene.add(nebulaMesh);
+
+  for (let i = 0; i < MAX_NEBULA; i++) {
+    nebulaParticles.push({
+      x: 0, y: 0, z: 0,
+      vx: 0, vy: 0, vz: 0,
+      life: 0, maxLife: 0,
+      active: false,
+      r: 1, g: 1, b: 1,
+    });
+  }
+}
+
+/**
+ * Start nebula expansion.
+ * @param {number} startScale - star's visual scale when triggered
+ * @param {'planetary'|'supernova'} type - determines size, speed, colors
+ */
+function startNebula(startScale, type = 'planetary') {
+  nebulaActive = true;
+  nebulaStartScale = startScale;
+
+  const isSN = type === 'supernova';
+  const count = isSN ? MAX_NEBULA : Math.floor(MAX_NEBULA * 0.6);
+
+  for (let i = 0; i < MAX_NEBULA; i++) {
+    const p = nebulaParticles[i];
+    if (i >= count) { p.active = false; continue; }
+
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+
+    const nx = Math.sin(phi) * Math.cos(theta);
+    const ny = Math.sin(phi) * Math.sin(theta);
+    const nz = Math.cos(phi);
+
+    // Start at the star's surface
+    const r = startScale * (0.95 + Math.random() * 0.1);
+    p.x = nx * r;
+    p.y = ny * r;
+    p.z = nz * r;
+
+    // Outward drift — supernova is faster and reaches farther
+    const speed = isSN
+      ? 0.08 + Math.random() * 0.10   // SN: fast blast wave
+      : 0.03 + Math.random() * 0.04;  // PN: gentle drift
+    p.vx = nx * speed + (Math.random() - 0.5) * speed * 0.15;
+    p.vy = ny * speed + (Math.random() - 0.5) * speed * 0.15;
+    p.vz = nz * speed + (Math.random() - 0.5) * speed * 0.15;
+
+    p.life = 1.0; // 1.0 = fully alive, used only for fade-in
+    p.maxLife = 1.0;
+    p.active = true;
+
+    // Colors depend on type
+    if (isSN) {
+      // Supernova remnant: hot blues, purples, fiery reds (Crab-like)
+      const colorRoll = Math.random();
+      if (colorRoll < 0.35) {
+        p.r = 0.3 + Math.random() * 0.2; p.g = 0.4 + Math.random() * 0.3; p.b = 1.0;
+      } else if (colorRoll < 0.65) {
+        p.r = 0.8 + Math.random() * 0.2; p.g = 0.15 + Math.random() * 0.15; p.b = 0.4 + Math.random() * 0.3;
+      } else {
+        p.r = 1.0; p.g = 0.5 + Math.random() * 0.4; p.b = 0.1 + Math.random() * 0.2;
+      }
+    } else {
+      // Planetary nebula: O III green-blue, H-alpha red/pink, N II red-orange
+      const colorRoll = Math.random();
+      if (colorRoll < 0.4) {
+        p.r = 0.1; p.g = 0.8 + Math.random() * 0.2; p.b = 0.6 + Math.random() * 0.3;
+      } else if (colorRoll < 0.7) {
+        p.r = 0.9 + Math.random() * 0.1; p.g = 0.2 + Math.random() * 0.2; p.b = 0.3 + Math.random() * 0.2;
+      } else {
+        p.r = 1.0; p.g = 0.4 + Math.random() * 0.3; p.b = 0.1;
+      }
+    }
+  }
+}
+
+function updateNebula(dt) {
+  if (!nebulaMesh) return;
+  const positions = nebulaMesh.geometry.attributes.position.array;
+  const colors = nebulaMesh.geometry.attributes.color.array;
+
+  // Drag factor: particles decelerate and eventually settle
+  const drag = 0.992;
+
+  for (let i = 0; i < MAX_NEBULA; i++) {
+    const p = nebulaParticles[i];
+    if (!p.active) {
+      positions[i * 3 + 2] = 99999;
+      continue;
+    }
+
+    // Apply drag — particles slow down over time
+    p.vx *= drag;
+    p.vy *= drag;
+    p.vz *= drag;
+
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.z += p.vz * dt;
+
+    positions[i * 3] = p.x;
+    positions[i * 3 + 1] = p.y;
+    positions[i * 3 + 2] = p.z;
+
+    // Gentle fade-in over first ~1 second, then stay at full brightness
+    p.life = Math.min(p.life + dt * 0.5, 1.0);
+    const fade = Math.min(p.life, 1.0);
+    colors[i * 3] = p.r * fade;
+    colors[i * 3 + 1] = p.g * fade;
+    colors[i * 3 + 2] = p.b * fade;
+  }
+
+  nebulaMesh.geometry.attributes.position.needsUpdate = true;
+  nebulaMesh.geometry.attributes.color.needsUpdate = true;
+}
+
+function clearNebula() {
+  nebulaActive = false;
+  for (const p of nebulaParticles) p.active = false;
+}
+
+/**
+ * Convert B-V color index to RGB.
+ * Attempt to represent the spectral class visually.
+ */
+function bvToRGB(bv) {
+  // Clamp to valid range
+  bv = Math.max(-0.4, Math.min(2.0, bv));
+  let r, g, b;
+
+  // Attempt a piecewise fit from Ballesteros (2012) approximation, simplified
+  if (bv < 0) {
+    // Blue-white (O/B stars)
+    r = 0.6 + bv * 0.5;  // 0.6..0.8
+    g = 0.7 + bv * 0.25;
+    b = 1.0;
+  } else if (bv < 0.4) {
+    // White to yellow-white (A/F stars)
+    r = 0.8 + bv * 0.5;
+    g = 0.85 + bv * 0.2;
+    b = 1.0 - bv * 0.5;
+  } else if (bv < 0.8) {
+    // Yellow (G stars, like the Sun at bv≈0.65)
+    const t = (bv - 0.4) / 0.4;
+    r = 1.0;
+    g = 0.93 - t * 0.2;
+    b = 0.8 - t * 0.4;
+  } else if (bv < 1.4) {
+    // Orange (K stars)
+    const t = (bv - 0.8) / 0.6;
+    r = 1.0;
+    g = 0.73 - t * 0.25;
+    b = 0.4 - t * 0.25;
+  } else {
+    // Red (M stars)
+    const t = Math.min(1, (bv - 1.4) / 0.6);
+    r = 1.0 - t * 0.2;
+    g = 0.48 - t * 0.2;
+    b = 0.15 - t * 0.1;
+  }
+
+  return { r: Math.max(0, r), g: Math.max(0, g), b: Math.max(0, b) };
+}
+
 function addStarfield() {
+  // Start with a placeholder; real data loads async
+  addStarfieldFromCatalog();
+}
+
+async function addStarfieldFromCatalog() {
+  let starData;
+  try {
+    const resp = await fetch(new URL('../data/bsc_stars.json', import.meta.url));
+    starData = await resp.json();
+  } catch (e) {
+    console.warn('Failed to load star catalog, using random starfield', e);
+    addRandomStarfield();
+    return;
+  }
+
+  const starCount = starData.length;
+  const SPHERE_R = 900;
+  const positions = new Float32Array(starCount * 3);
+  const colors = new Float32Array(starCount * 3);
+
+  // Magnitude range for size mapping
+  const MAG_BRIGHT = -1.5; // Sirius
+  const MAG_DIM = 8.0;
+
+  for (let i = 0; i < starCount; i++) {
+    const [x, y, z, mag, bv] = starData[i];
+    const i3 = i * 3;
+
+    // Place on sphere — unit vector from catalog × radius
+    positions[i3] = x * SPHERE_R;
+    positions[i3 + 1] = y * SPHERE_R;
+    positions[i3 + 2] = z * SPHERE_R;
+
+    // Color from B-V index
+    const rgb = bvToRGB(bv);
+    // Brightness scaling by magnitude (gentler curve)
+    const brightness = Math.pow(10, -0.08 * (mag - MAG_DIM));
+    colors[i3] = rgb.r * brightness;
+    colors[i3 + 1] = rgb.g * brightness;
+    colors[i3 + 2] = rgb.b * brightness;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const material = new THREE.PointsMaterial({
+    size: 1.2,
+    sizeAttenuation: true,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.85,
+  });
+  starfieldMesh = new THREE.Points(geometry, material);
+  scene.add(starfieldMesh);
+}
+
+/** Fallback if catalog fails to load */
+function addRandomStarfield() {
   const starCount = 4000;
   const positions = new Float32Array(starCount * 3);
-  const sizes = new Float32Array(starCount);
   const colors = new Float32Array(starCount * 3);
 
   for (let i = 0; i < starCount; i++) {
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
-    const r = 150 + Math.random() * 200;
+    const r = 800 + Math.random() * 400;
     const i3 = i * 3;
     positions[i3] = r * Math.sin(phi) * Math.cos(theta);
     positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
     positions[i3 + 2] = r * Math.cos(phi);
 
-    // Varied sizes: mostly tiny, a few brighter
-    const rand = Math.random();
-    sizes[i] = rand < 0.9 ? 0.15 + Math.random() * 0.3 : 0.5 + Math.random() * 0.6;
-
-    // Slight color variation: warm white to cool blue-white
-    const warmth = 0.7 + Math.random() * 0.3;
+    const warmth = 0.85 + Math.random() * 0.15;
     colors[i3] = warmth;
     colors[i3 + 1] = warmth;
-    colors[i3 + 2] = 0.8 + Math.random() * 0.2;
+    colors[i3 + 2] = 0.9 + Math.random() * 0.1;
   }
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
   const material = new THREE.PointsMaterial({
-    size: 0.4,
+    size: 1.2,
     sizeAttenuation: true,
     vertexColors: true,
     transparent: true,
-    opacity: 0.9,
+    opacity: 0.85,
   });
   starfieldMesh = new THREE.Points(geometry, material);
   scene.add(starfieldMesh);
-
-  // Star trail lines: 2 vertices per star (current pos + offset pos)
-  // During auto-zoom, each line stretches radially from screen center
-  const trailPositions = new Float32Array(starCount * 6); // 2 * 3 per star
-  const trailColors = new Float32Array(starCount * 6);
-  for (let i = 0; i < starCount; i++) {
-    const i6 = i * 6;
-    const i3 = i * 3;
-    // Both endpoints start at the star's position (zero-length line)
-    trailPositions[i6] = positions[i3];
-    trailPositions[i6 + 1] = positions[i3 + 1];
-    trailPositions[i6 + 2] = positions[i3 + 2];
-    trailPositions[i6 + 3] = positions[i3];
-    trailPositions[i6 + 4] = positions[i3 + 1];
-    trailPositions[i6 + 5] = positions[i3 + 2];
-    // Same color as the star
-    trailColors[i6] = colors[i3];
-    trailColors[i6 + 1] = colors[i3 + 1];
-    trailColors[i6 + 2] = colors[i3 + 2];
-    trailColors[i6 + 3] = colors[i3];
-    trailColors[i6 + 4] = colors[i3 + 1];
-    trailColors[i6 + 5] = colors[i3 + 2];
-  }
-  const trailGeo = new THREE.BufferGeometry();
-  trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
-  trailGeo.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
-  const trailMat = new THREE.LineBasicMaterial({
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.5,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    linewidth: 1,
-  });
-  starTrailMesh = new THREE.LineSegments(trailGeo, trailMat);
-  scene.add(starTrailMesh);
 }
 
 /**
@@ -919,63 +1131,13 @@ function animate() {
     drawCrossSection(now / 1000);
   }
 
-  // Auto-zoom: push out during evolution, pull in during collapse/supernova.
+  // Camera distance (used for bloom scaling below)
   const currentCamDist = camera.position.length();
   let newDist = currentCamDist;
-  if (autoZoomEnabled) {
-    const desiredDist = Math.max(controls.minDistance, targetCameraZ);
-    const desiredDist2 = Math.max(desiredDist, currentCamDist); // never pull in
-    const gap = desiredDist2 - currentCamDist;
-    if (gap > 0.1) {
-      const camDir = camera.position.clone().normalize();
-      const rate = 0.3;
-      newDist = currentCamDist + gap * rate;
-      camera.position.copy(camDir.multiplyScalar(newDist));
-    }
-  }
 
-  // Star trails: radial streaks during auto-zoom (long-exposure effect).
-  if (starTrailMesh && starfieldMesh) {
-    const cameraMoved = Math.abs(newDist - currentCamDist);
-    const isZooming = autoZoomEnabled && cameraMoved > 0.05;
-
-    // Snap opacity on/off for a sharp warp-speed effect
-    const targetOpacity = isZooming ? 0.7 : 0;
-    trailOpacity += (targetOpacity - trailOpacity) * Math.min(1, dt * 10);
-    starTrailMesh.material.opacity = trailOpacity;
-    starTrailMesh.visible = trailOpacity > 0.005;
-
-    if (trailOpacity > 0.005) {
-      // Streak as a percentage of star distance — big moves = long streaks
-      const streakFraction = Math.min(0.3, cameraMoved * 0.8);
-      const camPos = camera.position;
-
-      const starPositions = starfieldMesh.geometry.attributes.position.array;
-      const trailPositions = starTrailMesh.geometry.attributes.position.array;
-      const count = starPositions.length / 3;
-
-      for (let i = 0; i < count; i++) {
-        const i3 = i * 3;
-        const i6 = i * 6;
-        const sx = starPositions[i3], sy = starPositions[i3 + 1], sz = starPositions[i3 + 2];
-
-        trailPositions[i6] = sx;
-        trailPositions[i6 + 1] = sy;
-        trailPositions[i6 + 2] = sz;
-
-        // Extend radially away from camera by a fraction of the star's distance
-        const dx = sx - camPos.x, dy = sy - camPos.y, dz = sz - camPos.z;
-        trailPositions[i6 + 3] = sx + dx * streakFraction;
-        trailPositions[i6 + 4] = sy + dy * streakFraction;
-        trailPositions[i6 + 5] = sz + dz * streakFraction;
-      }
-      starTrailMesh.geometry.attributes.position.needsUpdate = true;
-    }
-  }
-
-  // Update orbit controls limits — always allow zooming well beyond the star
+  // Update orbit controls limits
   controls.minDistance = Math.max(1.5, scale * 1.2);
-  controls.maxDistance = 120; // stay inside the starfield sphere (r=150)
+  controls.maxDistance = 600;
 
   // Bloom strength — reduce when zoomed in so surface detail is visible
   const dist = newDist;
@@ -989,6 +1151,11 @@ function animate() {
   if (supernovaActive) {
     updateEndOfLife(dt);
     updatePhotons(dt);
+  }
+
+  // Planetary nebula (persists after end-of-life completes)
+  if (nebulaActive) {
+    updateNebula(dt);
   }
 
   if (!frozen && !supernovaActive) {
@@ -1046,7 +1213,7 @@ function animate() {
 /**
  * Update the star's visual appearance (sets targets, not instant).
  */
-export function updateStarAppearance(temperature, radius, luminosity) {
+export function updateStarAppearance(temperature, radius, luminosity, { wobble = true } = {}) {
   const rgb = temperatureToRGB(temperature);
   currentPhysicalRadius = radius;
 
@@ -1054,22 +1221,15 @@ export function updateStarAppearance(temperature, radius, luminosity) {
   const r = Math.max(radius, 0.05);
   const newScale = 0.5 * Math.pow(r, 0.7);
 
-  // Camera auto-zoom: let the star grow until it fills ~50% of the view,
-  // then zoom out aggressively to give plenty of runway.
-  const fillRatio = newScale / Math.max(camera.position.length(), 1);
-  if (fillRatio > 0.5) {
-    // Overshoot: zoom to where star fills only ~4% of the view.
-    // Capped to stay inside the starfield.
-    targetCameraZ = Math.min(100, Math.max(targetCameraZ, newScale / 0.04));
-  }
-
-  // Detect if there's a meaningful change → trigger wobble
-  const scaleDelta = Math.abs(newScale - target.scale);
-  const colorDelta = Math.abs(rgb.r - target.r) + Math.abs(rgb.g - target.g) + Math.abs(rgb.b - target.b);
-  if (scaleDelta > 0.02 || colorDelta > 0.05) {
-    wobbleAmount = Math.min(scaleDelta * 0.5 + colorDelta * 0.1, 0.15);
-    wobbleDecay = 1.0;
-    wobblePhase = 0;
+  // Detect if there's a meaningful change → trigger wobble (only for manual changes)
+  if (wobble) {
+    const scaleDelta = Math.abs(newScale - target.scale);
+    const colorDelta = Math.abs(rgb.r - target.r) + Math.abs(rgb.g - target.g) + Math.abs(rgb.b - target.b);
+    if (scaleDelta > 0.02 || colorDelta > 0.05) {
+      wobbleAmount = Math.min(scaleDelta * 0.5 + colorDelta * 0.1, 0.15);
+      wobbleDecay = 1.0;
+      wobblePhase = 0;
+    }
   }
 
   // Set targets — the animation loop will smoothly approach these
@@ -1108,6 +1268,13 @@ export function setSpotsVisible(visible) {
   }
 }
 
+export function setSpotActivity(density, size) {
+  if (starMaterial) {
+    starMaterial.uniforms.uSpotDensity.value = density;
+    starMaterial.uniforms.uSpotSize.value = size;
+  }
+}
+
 export function stopPhotons() {
   photonEmissionRate = 0;
   for (const p of photons) p.active = false;
@@ -1124,6 +1291,7 @@ export function unfreezeStar() {
   supernovaTime = 0;
   blackHoleActive = false;
   remnantType = null;
+  clearNebula();
   // Restore brightness and targets that SN/WD collapse may have modified
   if (starMaterial) {
     starMaterial.uniforms.uBrightness.value = 1.0;
@@ -1148,7 +1316,13 @@ export function triggerEndOfLife(mass) {
   supernovaMass = mass;
   supernovaDuration = mass >= 8 ? 6.0 : 5.0; // SN is longer and more dramatic
   supernovaStartScale = current.scale;
-  // Don't zoom in — let the user manually zoom to see the remnant
+
+  // Nebula remnant: planetary nebula for low-mass, supernova remnant for massive
+  if (mass < 8) {
+    startNebula(current.scale, 'planetary');
+  } else {
+    startNebula(current.scale, 'supernova');
+  }
 }
 
 function updateEndOfLife(dt) {

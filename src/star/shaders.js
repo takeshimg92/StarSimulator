@@ -59,6 +59,8 @@ export const starFragmentShader = /* glsl */ `
   uniform vec3 uColor;
   uniform float uLimbDarkeningCoeff;
   uniform float uSpotsVisible;
+  uniform float uSpotDensity;  // 0 = no spots, 1 = heavy coverage
+  uniform float uSpotSize;     // 0 = tiny, 1 = large
   uniform float uBrightness;
   uniform vec3 uTint; // color tint (1,1,1 = none, warm = sunglasses)
   uniform float uTime;
@@ -182,20 +184,38 @@ export const starFragmentShader = /* glsl */ `
       brightness *= 0.95 + 0.05 * granShimmer;
 
       // ---- Sunspots ----
-      // Spots drift slowly across the surface
+      // Spot parameters driven by uSpotDensity and uSpotSize.
+      // density controls the smoothstep threshold (lower inner = more spots visible)
+      // size controls the Worley cell scale (lower scale = larger cells = bigger spots)
+
+      // Worley scale: small uSpotSize → many tiny cells, large → fewer big cells
+      float wScale1 = mix(8.0, 2.5, uSpotSize);
+      float wScale2 = mix(12.0, 5.0, uSpotSize);
+
+      // Threshold: controls what fraction of Worley cells become spots.
+      // Worley distances cluster around 0.05–0.5. A spot appears where
+      // w.x < innerThresh (smoothstepped to outerThresh).
+      // At density=0: nothing passes. At density~0.14 (Sun): ~1% coverage.
+      // At density=1: heavy coverage (M dwarf).
+      float d = uSpotDensity;
+      float innerThresh1 = mix(0.02, 0.08, d);
+      float outerThresh1 = mix(0.06, 0.25, d);
+      float innerThresh2 = mix(0.01, 0.06, d);
+      float outerThresh2 = mix(0.04, 0.18, d);
+
       vec3 spotDrift1 = surfaceDir + vec3(t * 0.012, t * -0.008, t * 0.01);
-      vec2 w1 = worley2(spotDrift1, 3.5);
-      float spotMask1 = smoothstep(0.06, 0.22, w1.x);
+      vec2 w1 = worley2(spotDrift1, wScale1);
+      float spotMask1 = smoothstep(innerThresh1, outerThresh1, w1.x);
 
       vec3 spotDrift2 = surfaceDir + vec3(5.23 + t * 0.015, 1.87 - t * 0.01, 3.41 + t * 0.008);
-      vec2 w2 = worley2(spotDrift2, 6.0);
-      float spotMask2 = smoothstep(0.04, 0.15, w2.x);
+      vec2 w2 = worley2(spotDrift2, wScale2);
+      float spotMask2 = smoothstep(innerThresh2, outerThresh2, w2.x);
 
       float spotMask = spotMask1 * spotMask2;
 
-      // Penumbra
-      float penumbra1 = smoothstep(0.03, 0.30, w1.x);
-      float penumbra2 = smoothstep(0.02, 0.20, w2.x);
+      // Penumbra (slightly wider than umbra)
+      float penumbra1 = smoothstep(max(innerThresh1 - 0.03, 0.0), outerThresh1 + 0.08, w1.x);
+      float penumbra2 = smoothstep(max(innerThresh2 - 0.02, 0.0), outerThresh2 + 0.05, w2.x);
       float penumbraMask = penumbra1 * penumbra2;
 
       float spotDarkening = mix(0.08, 1.0, spotMask);
@@ -207,9 +227,13 @@ export const starFragmentShader = /* glsl */ `
       baseColor = mix(baseColor, baseColor * vec3(0.7, 0.4, 0.2), inPenumbra * 0.6);
 
       // ---- Faculae ----
-      float faculae1 = smoothstep(0.15, 0.40, w1.x) * (1.0 - smoothstep(0.40, 0.60, w1.x));
-      float faculae2 = smoothstep(0.10, 0.30, w2.x) * (1.0 - smoothstep(0.30, 0.50, w2.x));
-      float faculaeBright = max(faculae1, faculae2) * 0.15;
+      float facInner1 = outerThresh1 - 0.07;
+      float facOuter1 = outerThresh1 + 0.18;
+      float faculae1 = smoothstep(facInner1, facOuter1, w1.x) * (1.0 - smoothstep(facOuter1, facOuter1 + 0.20, w1.x));
+      float facInner2 = outerThresh2 - 0.05;
+      float facOuter2 = outerThresh2 + 0.15;
+      float faculae2 = smoothstep(facInner2, facOuter2, w2.x) * (1.0 - smoothstep(facOuter2, facOuter2 + 0.20, w2.x));
+      float faculaeBright = max(faculae1, faculae2) * 0.15 * uSpotDensity;
       brightness += faculaeBright;
 
       // ---- Surface turbulence ----

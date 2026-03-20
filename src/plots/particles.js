@@ -73,8 +73,11 @@ export function initParticleSim(canvasElement) {
 
 export function resizeParticleCanvas() {
   if (!canvas) return;
-  totalW = canvas.clientWidth;
-  totalH = canvas.clientHeight;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if (w === 0 || h === 0) return; // hidden tab — skip to preserve dimensions
+  totalW = w;
+  totalH = h;
   dpr = window.devicePixelRatio || 1;
   canvas.width = totalW * dpr;
   canvas.height = totalH * dpr;
@@ -374,7 +377,12 @@ function draw() {
     const idx = Math.min(Math.floor(speed / binWidth), HIST_BINS - 1);
     if (idx >= 0) protonBins[idx]++;
   }
-  const maxBin = Math.max(...protonBins, 1);
+  // Normalize bars so their scale matches the theoretical curve
+  const nProtons = particles.filter(p => p.speciesId === 'H').length;
+  // Expected peak bin count: nProtons * f_peak * binWidth
+  const sigmaP0 = vthProton / Math.sqrt(2);
+  const fPeak0 = (1 / sigmaP0) * Math.exp(-0.5);
+  const expectedPeakCount = Math.max(1, nProtons * fPeak0 * binWidth);
 
   // Histogram border
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
@@ -386,7 +394,7 @@ function draw() {
   for (let i = 0; i < HIST_BINS; i++) {
     const count = protonBins[i];
     if (count === 0) continue;
-    const barH = (count / maxBin) * (histH - 10);
+    const barH = Math.min((count / expectedPeakCount) * (histH - 10) * 0.8, histH - 2);
     ctx.fillStyle = SPECIES[0].histColor;
     ctx.fillRect(
       histX + i * barW + 1,
@@ -396,17 +404,19 @@ function draw() {
     );
   }
 
-  // Theoretical MB curve for protons
+  // Theoretical MB curve for protons — normalized to fit the histogram box
   const sigmaP = vthProton / Math.sqrt(2);
-  const nProtons = Math.round(TOTAL_PARTICLES * SPECIES[0].fraction);
+  // Find the peak of the MB distribution f(v) = (v/σ²) exp(-v²/(2σ²))
+  // Peak occurs at v = σ, with value f_peak = (1/σ) exp(-0.5)
+  const fPeak = (1 / sigmaP) * Math.exp(-0.5);
   ctx.strokeStyle = SPECIES[0].color;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   for (let i = 0; i <= histW; i++) {
     const v = (i / histW) * maxSpeed;
     const fv = (v / (sigmaP * sigmaP)) * Math.exp(-v * v / (2 * sigmaP * sigmaP));
-    const expectedCount = nProtons * fv * binWidth;
-    const y = histY + histH - (expectedCount / maxBin) * (histH - 10);
+    // Normalize so the curve peak reaches ~80% of the histogram height
+    const y = histY + histH - (fv / fPeak) * (histH - 10) * 0.8;
     if (i === 0) ctx.moveTo(histX + i, y);
     else ctx.lineTo(histX + i, y);
   }

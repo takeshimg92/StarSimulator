@@ -15,6 +15,7 @@ export function resizeSpeciesCanvas() {
   if (!canvas) return;
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
+  if (w === 0 || h === 0) return; // hidden tab — skip to preserve dimensions
   dpr = window.devicePixelRatio || 1;
   canvas.width = w * dpr;
   canvas.height = h * dpr;
@@ -77,13 +78,32 @@ export function drawSpecies(composition, mu, ageGyr) {
     return yPos + barH;
   }
 
-  // Core bar
+  // Core bar — Z_core is dynamic (fusion products: C, O, heavier metals)
   let y = pad.top;
-  const coreBottom = drawBar('Core', composition.X_core, composition.Y_core, composition.Z, y + 12);
+  const Z_core = composition.Z_core !== undefined ? composition.Z_core : composition.Z;
+  const coreBottom = drawBar('Core', composition.X_core, composition.Y_core, Z_core, y + 12);
 
-  // Envelope bar
+  // Envelope bar — show "Ejected" for remnant states
   y = coreBottom + 12;
-  const envBottom = drawBar('Envelope', composition.X_env, composition.Y_env, composition.Z, y + 12);
+  let envBottom;
+  if (composition.remnant) {
+    const barH = 14;
+    ctx.font = '9px Inter, monospace';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.fillText('Envelope', pad.left, y + 12 - 3);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.fillRect(pad.left, y + 12, barAreaW, barH);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(pad.left, y + 12, barAreaW, barH);
+    ctx.fillStyle = 'rgba(255, 200, 100, 0.4)';
+    ctx.font = '9px Inter, monospace';
+    ctx.fillText('Ejected', pad.left + barAreaW / 2 - 16, y + 12 + 11);
+    envBottom = y + 12 + barH;
+  } else {
+    const Z_env = composition.Z_env !== undefined ? composition.Z_env : composition.Z;
+    envBottom = drawBar('Envelope', composition.X_env, composition.Y_env, Z_env, y + 12);
+  }
 
   // Legend
   y = envBottom + 16;
@@ -96,7 +116,7 @@ export function drawSpecies(composition, mu, ageGyr) {
     let pct;
     if (label === 'H') pct = (composition.X_core * 100).toFixed(1);
     else if (label === 'He') pct = (composition.Y_core * 100).toFixed(1);
-    else pct = (composition.Z * 100).toFixed(1);
+    else pct = ((composition.Z_core !== undefined ? composition.Z_core : composition.Z) * 100).toFixed(1);
     const text = `${label} ${pct}%`;
     ctx.fillText(text, lx + 11, y);
     lx += ctx.measureText(text).width + 20;

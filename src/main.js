@@ -1,4 +1,4 @@
-import { initRenderer, updateStarAppearance, setSunglasses, freezeStar, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup, getScaleBarInfo, setAutoZoom, setOnFrameCallback, triggerEndOfLife, getZoneStructure, getRemnantType } from './star/renderer.js';
+import { initRenderer, updateStarAppearance, setSunglasses, freezeStar, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup, getScaleBarInfo, setOnFrameCallback, triggerEndOfLife, getZoneStructure, getRemnantType, setSpotActivity } from './star/renderer.js';
 import { computeProfiles, defaults } from './physics/stellar.js';
 import { createSliders } from './ui/sliders.js';
 import { initHRDiagram, resizeHRCanvas, updateHR, clearHRTrail } from './plots/hrDiagram.js';
@@ -42,7 +42,7 @@ function updateAgeDisplay() {
     (phaseName ? ` <span style="color:rgba(255,200,100,0.5);font-size:11px">&middot; ${phaseName}</span>` : '');
 }
 
-function onParametersChanged({ mass, radius, temperature, hydrogen }) {
+function onParametersChanged({ mass, radius, temperature, hydrogen }, { wobble = true } = {}) {
   // Sync hydrogen slider to evolution only if user manually changed it
   // (not when time evolution is driving the slider)
   if (hydrogen !== undefined && !suppressHydrogenSync) {
@@ -61,9 +61,31 @@ function onParametersChanged({ mass, radius, temperature, hydrogen }) {
     Yc: comp.Y_core,
   });
   evolution.setLuminosity(profiles.L);
-  updateStarAppearance(temperature, radius, profiles.L);
+  updateStarAppearance(temperature, radius, profiles.L, { wobble });
   updateParticleTemp(profiles.Tc);
   updateHR(temperature, profiles.L);
+
+  // Spot activity model: f(mass, age)
+  // Mass: fully convective M dwarfs are most active, massive stars with
+  // radiative envelopes have minimal spots. Solar-type stars have very
+  // modest spot coverage (<1% of the surface in reality).
+  let massFactor;
+  if (mass < 0.35) {
+    massFactor = 0.85;                                    // fully convective — very active
+  } else if (mass < 0.8) {
+    massFactor = 0.25 + 0.6 * (0.8 - mass) / 0.45;      // K dwarfs — moderate
+  } else if (mass <= 1.3) {
+    massFactor = 0.12 + 0.13 * (1.3 - mass) / 0.5;      // solar-type — subtle
+  } else {
+    massFactor = Math.max(0, 0.12 * (1 - (mass - 1.3))); // drops to 0 for hot stars
+  }
+  // Age: young stars are more active (magnetic braking spins them down)
+  const ageFrac = evolution.getAge() / Math.max(1, evolution.getTrackMaxAge());
+  const ageFactor = Math.max(0.15, 1.0 - 0.6 * ageFrac);
+  const density = Math.max(0, Math.min(1, massFactor * ageFactor));
+  // Spot size: larger relative coverage for low-mass stars, tiny for solar-type
+  const sizeFactor = mass < 0.5 ? 0.8 : mass < 1.3 ? 0.2 : 0.1;
+  setSpotActivity(density, sizeFactor);
 
   updateParticleComposition(comp.X_core, comp.Y_core);
   drawSpecies(comp, mu, evolution.getAge() / 1e9);
@@ -230,6 +252,10 @@ function initTimeControls() {
         : `Age: ${ageGyr.toFixed(3)} billion years`;
       ageDisplay.innerHTML = ageStr +
         `<br><span style="font-size:11px;color:rgba(255,200,100,0.5)">${fate}</span>`;
+      // Show ejected envelope in composition display
+      const deathComp = evolution.getComposition();
+      deathComp.remnant = true;
+      drawSpecies(deathComp, evolution.getMu(), evolution.getAge() / 1e9);
       updateScrubberPosition();
       return;
     }
@@ -245,7 +271,7 @@ function initTimeControls() {
         temperature: result.temperature,
         radius: result.radius,
         hydrogen: result.X,
-      });
+      }, { wobble: false });
       suppressHydrogenSync = false;
       drawSpecies(evolution.getComposition(), evolution.getMu(), evolution.getAge() / 1e9);
     }
@@ -257,7 +283,7 @@ function initTimeControls() {
   playBtn.addEventListener('click', () => {
     if (evolution.isRunning()) {
       evolution.setRunning(false);
-      setAutoZoom(false);
+      // auto-zoom removed — user controls zoom
       playBtn.innerHTML = '&#9654;';
       playBtn.classList.remove('playing');
       setStarfieldSpeed(0);
@@ -266,7 +292,7 @@ function initTimeControls() {
     } else {
       ensureInitialized();
       evolution.setRunning(true);
-      setAutoZoom(true);
+      // auto-zoom removed — user controls zoom
       playBtn.innerHTML = '&#9646;&#9646;';
       playBtn.classList.add('playing');
       sliderControls.setDisabled(true);
@@ -282,7 +308,7 @@ function initTimeControls() {
     // Pause while scrubbing
     if (evolution.isRunning()) {
       evolution.setRunning(false);
-      setAutoZoom(false);
+      // auto-zoom removed — user controls zoom
       playBtn.innerHTML = '&#9654;';
       playBtn.classList.remove('playing');
       setStarfieldSpeed(0);
@@ -344,7 +370,7 @@ function timeEvolutionLoop(now) {
     temperature: result.temperature,
     radius: result.radius,
     hydrogen: result.X,
-  });
+  }, { wobble: false });
   suppressHydrogenSync = false;
 
   // Throttle particle composition updates
@@ -364,7 +390,6 @@ function timeEvolutionLoop(now) {
 
   if (result.dead) {
     evolution.setRunning(false);
-    setAutoZoom(false);
     document.getElementById('play-pause-btn').innerHTML = '&#9654;';
     document.getElementById('play-pause-btn').classList.remove('playing');
     setStarfieldSpeed(0);
@@ -395,6 +420,11 @@ function timeEvolutionLoop(now) {
     } else {
       setRemnantState('whitedwarf');
     }
+
+    // Update composition display to show ejected envelope
+    const comp = evolution.getComposition();
+    comp.remnant = true;
+    drawSpecies(comp, evolution.getMu(), evolution.getAge() / 1e9);
   }
 }
 
@@ -462,7 +492,13 @@ async function init() {
     clearHRTrail();
     clearMuHistory();
     unfreezeStar();
-    setRemnantState(null);
+
+    // Sync particle composition BEFORE restoring normal mode,
+    // so spawnParticles() uses the correct fractions.
+    const comp = evolution.getComposition();
+    updateParticleComposition(comp.X_core, comp.Y_core);
+    setRemnantState(null); // now spawnParticles() uses updated fractions
+
     setStarfieldSpeed(0);
     sliderControls.setDisabled(false);
     sliderControls.setValues(defaults);
@@ -473,7 +509,7 @@ async function init() {
     lastInitMass = null;
     document.getElementById('time-scrubber').value = 0;
     document.getElementById('scrubber-label').textContent = '';
-    drawSpecies(evolution.getComposition(), evolution.getMu(), evolution.getAge() / 1e9);
+    drawSpecies(comp, evolution.getMu(), evolution.getAge() / 1e9);
   });
 
   // Initial render
@@ -491,13 +527,38 @@ async function init() {
   lastFrameTime = performance.now();
   requestAnimationFrame(timeEvolutionLoop);
 
-  // Resize handling
+  // Resize handling — canvas resize functions skip when tab is hidden (0×0),
+  // so a deferred resize is triggered when switching back to the star tab.
+  let resizePending = false;
   window.addEventListener('resize', () => {
     resizeHRCanvas();
     resizeParticleCanvas();
     resizeSpeciesCanvas();
-    onParametersChanged(sliderControls.getValues());
+    // If any canvas couldn't resize (hidden tab), mark pending
+    const starTab = document.querySelector('.nav-link[data-tab="star"]');
+    if (starTab && !starTab.classList.contains('active')) {
+      resizePending = true;
+    } else {
+      onParametersChanged(sliderControls.getValues());
+    }
   });
+
+  // Patch tab handler to flush pending resize
+  const origTabHandler = document.querySelector('.nav-link[data-tab="star"]');
+  if (origTabHandler) {
+    origTabHandler.addEventListener('click', () => {
+      if (resizePending) {
+        resizePending = false;
+        // Small delay so the tab content is visible before measuring
+        requestAnimationFrame(() => {
+          resizeHRCanvas();
+          resizeParticleCanvas();
+          resizeSpeciesCanvas();
+          onParametersChanged(sliderControls.getValues());
+        });
+      }
+    });
+  }
 }
 
 // Hover tooltip state — shared so the time loop can refresh it

@@ -58,6 +58,7 @@ export function resizeHRCanvas() {
   if (!canvas) return;
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
+  if (w === 0 || h === 0) return; // hidden tab — skip to preserve dimensions
   dpr = window.devicePixelRatio || 1;
   canvas.width = w * dpr;
   canvas.height = h * dpr;

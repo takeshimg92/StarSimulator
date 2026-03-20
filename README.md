@@ -4,6 +4,8 @@
 
 Interactive 3D simulator of stellar evolution, built with Three.js and real stellar physics. Powered by [MIST](https://waps.cfa.harvard.edu/MIST/) evolutionary tracks (Choi et al. 2016, Dotter 2016).
 
+This project was written with a massive support from Claude.
+
 ## Getting started
 
 ```bash

@@ -144,7 +144,7 @@ export function getStateAtAge(mass, ageYears) {
   // Use the nearest track's phase (don't interpolate discrete phases)
   const phase = frac < 0.5 ? stLo.phase : stHi.phase;
 
-  // Max age: the end of the nearest track
+  // Max age: use the nearest track's endpoint (must match getMaxAge)
   const nearKey = frac < 0.5 ? massKeys[lo] : massKeys[hi];
   const nearAges = tracks[nearKey].star_age;
   const maxAge = nearAges[nearAges.length - 1];
@@ -199,9 +199,8 @@ export function getAvailableMasses() { return massValues.slice(); }
 export function getMaxAge(mass) {
   if (!tracks) return 15e9;
   const { lo, hi, frac } = bracketMass(mass);
-  const aLo = tracks[massKeys[lo]].star_age;
-  const aHi = lo === hi ? aLo : tracks[massKeys[hi]].star_age;
-  const maxLo = aLo[aLo.length - 1];
-  const maxHi = aHi[aHi.length - 1];
-  return maxLo + (maxHi - maxLo) * frac;
+  // Use the nearest track's endpoint — consistent with getStateAtAge
+  const nearKey = frac < 0.5 ? massKeys[lo] : massKeys[hi];
+  const nearAges = tracks[nearKey].star_age;
+  return nearAges[nearAges.length - 1];
 }

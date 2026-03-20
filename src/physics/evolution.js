@@ -44,7 +44,11 @@ function muFromX(X) {
   return 1 / (2 * X + 0.75 * Y + 0.5 * Z);
 }
 
-function muCore() { return muFromX(X_core); }
+function muCore() {
+  const Y = Y_core_fromTrack;
+  const Z_c = Math.max(0, 1 - X_core - Y);
+  return 1 / (2 * X_core + 0.75 * Y + 0.5 * Z_c);
+}
 function muEnv() { return muFromX(X_env); }
 function muEff() { return F_CORE * muCore() + (1 - F_CORE) * muEnv(); }
 
@@ -191,10 +195,13 @@ export function getPhase() { return currentPhase; }
 export function getPhaseName() { return currentPhaseName; }
 
 export function getComposition() {
+  const Z_core = Math.max(0, 1 - X_core - Y_core_fromTrack);
   return {
     X_core, Y_core: Y_core_fromTrack,
     X_env, Y_env: 1 - X_env - Z,
-    Z,
+    Z_core,
+    Z_env: Z,
+    Z,          // kept for backward compat (envelope metallicity)
     X: X_core, Y: Y_core_fromTrack,
     heCoreM: heCoreM_fromTrack,
   };
