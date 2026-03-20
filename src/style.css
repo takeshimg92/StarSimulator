@@ -818,3 +818,491 @@ input[type="range"]::-moz-range-thumb {
   backdrop-filter: blur(6px);
   white-space: nowrap;
 }
+
+/* ===== Mobile-only elements: hidden on desktop ===== */
+#drawer-toggle,
+#mobile-reset,
+#mobile-controls-right,
+#mobile-drawer,
+#drawer-backdrop,
+#carousel-dots,
+#mobile-drag-handle,
+#mobile-viewport-icons {
+  display: none;
+}
+
+/* ===== Mobile layout (portrait phones) ===== */
+@media (max-width: 767px) {
+  html, body {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Viewport fills screen; UI floats on top */
+  #app {
+    display: block;
+    height: 100vh;
+    height: 100dvh;
+    position: relative;
+  }
+
+  /* --- Layer 1: Nav — fixed at top --- */
+  #top-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: auto;
+    padding: 6px 12px 4px;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px;
+    z-index: 10;
+    background: linear-gradient(to bottom, rgba(4, 4, 18, 0.8) 0%, rgba(4, 4, 18, 0.0) 100%);
+  }
+
+  .nav-title {
+    font-size: 11px;
+    letter-spacing: 1px;
+    width: 100%;
+    text-align: center;
+  }
+
+  .nav-links {
+    gap: 16px;
+    justify-content: center;
+  }
+
+  .nav-link {
+    font-size: 11px;
+  }
+
+  /* --- Layer 2: Main content --- */
+
+  /* Hide left panel entirely on mobile */
+  #left-panel {
+    display: none !important;
+  }
+
+  /* Viewport fills entire screen behind all UI */
+  #viewport {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+  }
+
+  /* Hide desktop display toggles on mobile — replaced by icons */
+  #display-toggles {
+    display: none !important;
+  }
+
+  /* Floating viewport icons (sunglasses + slice) */
+  #mobile-viewport-icons {
+    display: flex !important;
+    flex-direction: column;
+    gap: 8px;
+    position: fixed;
+    top: 56px;
+    left: 10px;
+    z-index: 11;
+  }
+
+  #mobile-sunglasses-btn,
+  #mobile-slice-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(4, 4, 18, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.4);
+    cursor: pointer;
+    transition: color 0.2s, background 0.2s, border-color 0.2s;
+  }
+
+  #mobile-sunglasses-btn.active,
+  #mobile-slice-btn.active {
+    color: rgba(255, 200, 100, 0.9);
+    background: rgba(80, 60, 20, 0.5);
+    border-color: rgba(255, 200, 100, 0.3);
+  }
+
+  /* Scale bar: reposition for mobile */
+  #scale-bar {
+    left: 12px;
+    bottom: 220px;
+  }
+
+  /* --- Right panel: anchored above playback controls at bottom --- */
+  #right-panel {
+    position: fixed;
+    bottom: 80px; /* above playback controls */
+    left: 0;
+    right: 0;
+    height: auto;
+    background: transparent;
+    overflow: visible;
+    z-index: 4;
+  }
+
+  /* Drag handle to expand bottom panel */
+  #mobile-drag-handle {
+    display: flex;
+    justify-content: center;
+    padding: 6px 0 2px;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  #mobile-drag-handle span {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.25);
+  }
+
+  #right-panel {
+    transition: height 0.25s ease, bottom 0.25s ease;
+  }
+
+  /* Minimized: drag handle + thin strip so it's easy to grab */
+  #right-panel.minimized-mobile {
+    height: 28px !important;
+    overflow: hidden;
+  }
+
+  #right-panel.minimized-mobile #tab-star,
+  #right-panel.minimized-mobile #carousel-dots {
+    display: none !important;
+  }
+
+  #right-panel.minimized-mobile #mobile-drag-handle {
+    padding: 10px 0;
+  }
+
+  /* Expanded: tall panel */
+  #right-panel.expanded-mobile {
+    bottom: 80px;
+    height: 45vh !important;
+  }
+
+  #right-panel.expanded-mobile #tab-star {
+    height: calc(100% - 20px) !important;
+  }
+
+  #right-panel.expanded-mobile #tab-star .mini-panel {
+    height: 100% !important;
+  }
+
+  /* Viewport is absolute — no shift needed, star is always visible */
+
+  /* Star tab: horizontal carousel strip */
+  #tab-star {
+    flex-direction: row !important;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    height: 120px;
+    padding: 0;
+    gap: 0;
+    scrollbar-width: none; /* hide scrollbar on Firefox */
+  }
+
+  #tab-star::-webkit-scrollbar {
+    display: none; /* hide scrollbar on Chrome/Safari */
+  }
+
+  #tab-star .mini-panel {
+    min-width: 100%;
+    flex: none;
+    scroll-snap-align: start;
+    height: 120px;
+    background: rgba(4, 4, 18, 0.75);
+    border-radius: 6px;
+  }
+
+  #tab-star .mini-panel canvas {
+    width: 100%;
+    height: 100%;
+  }
+
+  .panel-header {
+    font-size: 10px;
+    padding: 2px 8px;
+  }
+
+  .panel-header .help-icon {
+    display: none;
+  }
+
+  /* Carousel dots */
+  #carousel-dots {
+    display: flex !important;
+    justify-content: center;
+    gap: 6px;
+    padding: 4px 0;
+    background: transparent;
+  }
+
+  #carousel-dots .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    transition: background 0.2s;
+  }
+
+  #carousel-dots .dot.active {
+    background: rgba(255, 200, 100, 0.7);
+  }
+
+  /* Theory/Implementation/About tabs: fill the panel */
+  #tab-theory.active,
+  #tab-implementation.active,
+  #tab-about.active {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .expandable-tab .expand-btn {
+    display: none; /* no expand button on mobile */
+  }
+
+  .scrollable-panel {
+    padding: 12px;
+  }
+
+  #about-panel {
+    padding: 16px 12px;
+  }
+
+  /* When on text tabs, expand panel to fill screen */
+  #right-panel:has(#tab-theory.active),
+  #right-panel:has(#tab-implementation.active),
+  #right-panel:has(#tab-about.active) {
+    top: 52px;
+    bottom: 0;
+    height: auto;
+    overflow-y: auto;
+    background: rgba(4, 4, 18, 0.92);
+  }
+
+  /* --- Layer 3: Playback controls --- */
+  #playback-controls {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    transform: none;
+    width: 100%;
+    padding: 6px 12px 8px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    background: rgba(4, 4, 18, 0.7);
+    z-index: 5;
+  }
+
+  #age-display {
+    font-size: 11px;
+  }
+
+  #star-scale {
+    font-size: 9px;
+  }
+
+  #playback-row {
+    width: 100%;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  #time-scrubber {
+    width: 0;
+    flex: 1;
+  }
+
+  #play-pause-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+  }
+
+  #scrubber-label {
+    font-size: 9px;
+    min-width: 40px;
+  }
+
+  #speed-value {
+    font-size: 9px;
+  }
+
+  #playback-row #time-speed {
+    width: 50px;
+  }
+
+  #playback-options {
+    display: none; /* moved to drawer */
+  }
+
+  #core-display {
+    display: none; /* too detailed for mobile */
+  }
+
+  /* Right-side controls: reset + gear */
+  #mobile-controls-right {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+  }
+
+  #mobile-reset {
+    display: block !important;
+    font-size: 9px;
+    font-family: 'Inter', sans-serif;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(255, 200, 100, 0.1);
+    border: 1px solid rgba(255, 200, 100, 0.2);
+    color: rgba(255, 200, 100, 0.7);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  /* Drawer toggle button */
+  #drawer-toggle {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 50%;
+    color: rgba(255, 200, 100, 0.7);
+    font-size: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  /* --- Mobile drawer --- */
+  #mobile-drawer {
+    display: block;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(8, 8, 24, 0.95);
+    border-top: 1px solid rgba(255, 200, 100, 0.2);
+    padding: 12px 16px 20px;
+    transform: translateY(100%);
+    transition: transform 0.3s ease;
+    z-index: 20;
+    backdrop-filter: blur(10px);
+  }
+
+  #mobile-drawer.open {
+    transform: translateY(0);
+  }
+
+  #mobile-drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+
+  #drawer-close {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+
+  #mobile-toggles {
+    display: flex;
+    gap: 16px;
+    margin: 12px 0;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  #mobile-toggles label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+
+  #mobile-toggles input {
+    accent-color: rgba(255, 200, 100, 0.7);
+  }
+
+  #mobile-drawer-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  #mobile-reset-btn {
+    font-size: 11px;
+    padding: 6px 14px;
+    border-radius: 4px;
+    background: rgba(255, 200, 100, 0.12);
+    border: 1px solid rgba(255, 200, 100, 0.2);
+    color: rgba(255, 200, 100, 0.8);
+    cursor: pointer;
+  }
+
+  #mobile-slowmo {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.35);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+
+  #mobile-slowmo input {
+    accent-color: rgba(255, 200, 100, 0.7);
+    width: 12px;
+    height: 12px;
+  }
+
+  /* Backdrop overlay when drawer is open */
+  #drawer-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 19;
+  }
+
+  #drawer-backdrop.visible {
+    display: block;
+  }
+
+  /* Help icon tooltips: hide on mobile (no hover) */
+  .tooltip-popup {
+    display: none !important;
+  }
+
+  /* Star tooltip: allow on mobile (triggered by tap) */
+  .star-tooltip {
+    font-size: 10px;
+    max-width: 220px;
+    white-space: normal;
+  }
+}

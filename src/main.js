@@ -1,9 +1,9 @@
-import { initRenderer, updateStarAppearance, setSunglasses, freezeStar, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup, getScaleBarInfo, setOnFrameCallback, triggerEndOfLife, getZoneStructure, getRemnantType, setSpotActivity } from './star/renderer.js';
-import { computeProfiles, defaults } from './physics/stellar.js';
+import { initRenderer, updateStarAppearance, setSunglasses, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup, getScaleBarInfo, setOnFrameCallback, triggerEndOfLife, getZoneStructure, getRemnantType, setSpotActivity } from './star/renderer.js';
+import { computeProfiles } from './physics/stellar.js';
 import { createSliders } from './ui/sliders.js';
-import { initHRDiagram, resizeHRCanvas, updateHR, clearHRTrail } from './plots/hrDiagram.js';
+import { initHRDiagram, resizeHRCanvas, updateHR } from './plots/hrDiagram.js';
 import { initParticleSim, resizeParticleCanvas, updateParticleTemp, updateParticleComposition, setRemnantState } from './plots/particles.js';
-import { initSpeciesPlot, resizeSpeciesCanvas, drawSpecies, clearMuHistory } from './plots/species.js';
+import { initSpeciesPlot, resizeSpeciesCanvas, drawSpecies } from './plots/species.js';
 import { initEquationDisplay } from './ui/equations.js';
 import { initImplementationPanel } from './ui/implementation.js';
 import * as evolution from './physics/evolution.js';
@@ -32,6 +32,10 @@ function updateScaleBar() {
 }
 
 function updateAgeDisplay() {
+  if (!timeInitialized) {
+    if (ageDisplay) ageDisplay.innerHTML = '';
+    return;
+  }
   const ageMyr = evolution.getAge() / 1e6;
   const ageGyr = evolution.getAge() / 1e9;
   const phaseName = evolution.getPhaseName();
@@ -128,10 +132,10 @@ function initTabs() {
       link.classList.add('active');
       document.getElementById(`tab-${tabId}`).classList.add('active');
 
-      // Collapse expanded panel when switching to non-expandable tabs
+      // Reset panel state when switching tabs
       const rightPanel = document.getElementById('right-panel');
+      rightPanel.classList.remove('expanded', 'expanded-mobile', 'minimized-mobile');
       if (tabId === 'star' || tabId === 'about') {
-        rightPanel.classList.remove('expanded');
         document.querySelectorAll('.expand-btn').forEach(b => {
           b.textContent = '\u26F6';
           b.title = 'Expand';
@@ -488,28 +492,7 @@ async function init() {
 
   // Reset button
   document.getElementById('reset-btn').addEventListener('click', () => {
-    evolution.reset();
-    clearHRTrail();
-    clearMuHistory();
-    unfreezeStar();
-
-    // Sync particle composition BEFORE restoring normal mode,
-    // so spawnParticles() uses the correct fractions.
-    const comp = evolution.getComposition();
-    updateParticleComposition(comp.X_core, comp.Y_core);
-    setRemnantState(null); // now spawnParticles() uses updated fractions
-
-    setStarfieldSpeed(0);
-    sliderControls.setDisabled(false);
-    sliderControls.setValues(defaults);
-    updateAgeDisplay();
-    document.getElementById('play-pause-btn').innerHTML = '&#9654;';
-    document.getElementById('play-pause-btn').classList.remove('playing');
-    timeInitialized = false;
-    lastInitMass = null;
-    document.getElementById('time-scrubber').value = 0;
-    document.getElementById('scrubber-label').textContent = '';
-    drawSpecies(comp, evolution.getMu(), evolution.getAge() / 1e9);
+    window.location.reload();
   });
 
   // Initial render
@@ -558,6 +541,193 @@ async function init() {
         });
       }
     });
+  }
+
+  // --- Mobile-specific setup ---
+  initMobile(sliderControls);
+}
+
+function initMobile(sliderControls) {
+  // Drawer toggle
+  const drawer = document.getElementById('mobile-drawer');
+  const backdrop = document.getElementById('drawer-backdrop');
+  const drawerToggle = document.getElementById('drawer-toggle');
+  const drawerClose = document.getElementById('drawer-close');
+
+  function openDrawer() {
+    drawer.classList.add('open');
+    backdrop.classList.add('visible');
+  }
+  function closeDrawer() {
+    drawer.classList.remove('open');
+    backdrop.classList.remove('visible');
+  }
+
+  if (drawerToggle) drawerToggle.addEventListener('click', openDrawer);
+  if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
+  if (backdrop) backdrop.addEventListener('click', closeDrawer);
+
+  // Create mobile sliders (duplicate of desktop sliders for the drawer)
+  const mobileSliderPanel = document.getElementById('mobile-sliders');
+  if (mobileSliderPanel) {
+    const mobileSliderControls = createSliders(mobileSliderPanel, (values) => {
+      // Sync desktop sliders when mobile changes
+      sliderControls.setValues(values);
+      onParametersChanged(values);
+    });
+
+    // Sync mobile sliders when desktop values change (e.g. reset)
+    const origSetValues = sliderControls.setValues.bind(sliderControls);
+    sliderControls.setValues = (vals) => {
+      origSetValues(vals);
+      mobileSliderControls.setValues(vals);
+    };
+
+    // Mobile reset button (in drawer)
+    const mobileReset = document.getElementById('mobile-reset-btn');
+    if (mobileReset) {
+      mobileReset.addEventListener('click', () => {
+        document.getElementById('reset-btn').click();
+        closeDrawer();
+      });
+    }
+  }
+
+  // Mobile reset button (in playback row)
+  const mobileResetPlayback = document.getElementById('mobile-reset');
+  if (mobileResetPlayback) {
+    mobileResetPlayback.addEventListener('click', () => {
+      document.getElementById('reset-btn').click();
+    });
+  }
+
+  // Sunglasses and Slice floating buttons (viewport icons)
+  const sunglassesBtn = document.getElementById('mobile-sunglasses-btn');
+  const sliceBtn = document.getElementById('mobile-slice-btn');
+  const desktopSunglasses = document.getElementById('sunglasses-toggle');
+  const desktopSlice = document.getElementById('slice-toggle');
+
+  if (sunglassesBtn && desktopSunglasses) {
+    sunglassesBtn.addEventListener('click', () => {
+      desktopSunglasses.checked = !desktopSunglasses.checked;
+      desktopSunglasses.dispatchEvent(new Event('change'));
+      sunglassesBtn.classList.toggle('active', desktopSunglasses.checked);
+    });
+  }
+
+  if (sliceBtn && desktopSlice) {
+    sliceBtn.addEventListener('click', () => {
+      desktopSlice.checked = !desktopSlice.checked;
+      desktopSlice.dispatchEvent(new Event('change'));
+      sliceBtn.classList.toggle('active', desktopSlice.checked);
+    });
+  }
+
+  // Sync mobile slow-motion toggle
+  const mobileSlowmo = document.getElementById('mobile-slowmo-toggle');
+  const desktopSlowmo = document.getElementById('slowmo-toggle');
+  if (mobileSlowmo && desktopSlowmo) {
+    mobileSlowmo.addEventListener('change', () => {
+      desktopSlowmo.checked = mobileSlowmo.checked;
+      desktopSlowmo.dispatchEvent(new Event('change'));
+    });
+    desktopSlowmo.addEventListener('change', () => {
+      mobileSlowmo.checked = desktopSlowmo.checked;
+    });
+  }
+
+  // Drag handle to expand/collapse bottom panel
+  // Drag handle: three states — minimized / default / expanded
+  const dragHandle = document.getElementById('mobile-drag-handle');
+  const rightPanel = document.getElementById('right-panel');
+  if (dragHandle && rightPanel) {
+    let startY = 0;
+    // States: 'minimized' | 'default' | 'expanded'
+    let panelState = 'default';
+
+    function setPanelState(state) {
+      panelState = state;
+      rightPanel.classList.remove('minimized-mobile', 'expanded-mobile');
+      if (state === 'minimized') rightPanel.classList.add('minimized-mobile');
+      if (state === 'expanded') rightPanel.classList.add('expanded-mobile');
+      requestAnimationFrame(() => {
+        resizeHRCanvas();
+        resizeParticleCanvas();
+        resizeSpeciesCanvas();
+        if (state !== 'minimized') {
+          onParametersChanged(sliderControls.getValues(), { wobble: false });
+        }
+      });
+    }
+
+    function isStarTab() {
+      const active = document.querySelector('.nav-link.active');
+      return active && active.dataset.tab === 'star';
+    }
+
+    dragHandle.addEventListener('touchstart', (e) => {
+      startY = e.touches[0].clientY;
+    }, { passive: true });
+
+    dragHandle.addEventListener('touchend', (e) => {
+      if (!isStarTab()) return;
+      const endY = e.changedTouches[0].clientY;
+      const dy = startY - endY; // positive = swiped up
+      if (dy > 30) {
+        // Swipe up: minimized → default → expanded
+        if (panelState === 'minimized') setPanelState('default');
+        else if (panelState === 'default') setPanelState('expanded');
+      } else if (dy < -30) {
+        // Swipe down: expanded → default → minimized
+        if (panelState === 'expanded') setPanelState('default');
+        else if (panelState === 'default') setPanelState('minimized');
+      }
+    }, { passive: true });
+
+    // Tap cycles (star tab only): minimized → default → expanded → minimized
+    dragHandle.addEventListener('click', () => {
+      if (!isStarTab()) return;
+      if (panelState === 'minimized') setPanelState('default');
+      else if (panelState === 'default') setPanelState('expanded');
+      else setPanelState('minimized');
+    });
+  }
+
+  // Carousel dot tracking via IntersectionObserver
+  const tabStar = document.getElementById('tab-star');
+  const dots = document.querySelectorAll('#carousel-dots .dot');
+  const panels = tabStar ? tabStar.querySelectorAll('.mini-panel') : [];
+
+  if (tabStar && panels.length === 3 && dots.length === 3) {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
+          const idx = Array.from(panels).indexOf(entry.target);
+          dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+
+          // Trigger canvas resize + redraw when panel becomes visible
+          requestAnimationFrame(() => {
+            resizeHRCanvas();
+            resizeParticleCanvas();
+            resizeSpeciesCanvas();
+            onParametersChanged(sliderControls.getValues(), { wobble: false });
+          });
+        }
+      });
+    }, {
+      root: tabStar,
+      threshold: 0.5,
+    });
+
+    panels.forEach(p => observer.observe(p));
+
+    // Initial render of first visible panel after layout settles
+    setTimeout(() => {
+      resizeHRCanvas();
+      resizeParticleCanvas();
+      resizeSpeciesCanvas();
+      onParametersChanged(sliderControls.getValues(), { wobble: false });
+    }, 100);
   }
 }
 
@@ -712,6 +882,29 @@ function initStarHover(viewport) {
   viewport.addEventListener('mouseleave', () => {
     hoverActive = false;
     hoverTooltip.style.display = 'none';
+  });
+
+  // Mobile: single tap shows tooltip, tap elsewhere hides it
+  let tapTimeout = null;
+  viewport.addEventListener('touchend', (e) => {
+    // Ignore multi-touch (pinch zoom) and drags
+    if (e.changedTouches.length !== 1) return;
+
+    const touch = e.changedTouches[0];
+    const rect = viewport.getBoundingClientRect();
+    hoverMouse.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+    hoverMouse.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+    lastMouseClientX = touch.clientX;
+    lastMouseClientY = touch.clientY;
+    hoverActive = true;
+    refreshTooltip();
+
+    // Auto-hide after 3 seconds
+    clearTimeout(tapTimeout);
+    tapTimeout = setTimeout(() => {
+      hoverActive = false;
+      hoverTooltip.style.display = 'none';
+    }, 3000);
   });
 }
 

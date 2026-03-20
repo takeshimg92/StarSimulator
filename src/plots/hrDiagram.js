@@ -39,7 +39,7 @@ let targetLogLMin = logLMin;
 let targetLogLMax = logLMax;
 
 // Padding
-const PAD = { top: 8, right: 12, bottom: 24, left: 48 };
+const PAD = { top: 14, right: 12, bottom: 6, left: 48 };
 
 // Minimum padding around data in log units
 const DATA_MARGIN = 0.5;
@@ -273,13 +273,13 @@ function draw(currentLogT, currentLogL, currentT) {
   ctx.font = '9px Inter, monospace';
   ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
 
-  // X-axis (temperature, reversed) — ticks
+  // X-axis (temperature, reversed) — ticks at top
   for (const t of tempTicks) {
     const logT = Math.log10(t);
-    const p = toCanvas(logT, logLMin);
+    const p = toCanvas(logT, logLMax);
     const label = t >= 10000 ? `${t / 1000}k` : `${t}`;
     const textW = ctx.measureText(label).width;
-    ctx.fillText(label, p.x - textW / 2, PAD.top + plotH + 14);
+    ctx.fillText(label, p.x - textW / 2, PAD.top - 1);
   }
 
   // Y-axis (luminosity) — use Unicode superscripts
@@ -299,7 +299,7 @@ function draw(currentLogT, currentLogL, currentT) {
 
   // Axis titles
   ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-  ctx.fillText('\u2190 Temperature (K)', PAD.left + plotW / 2 - 35, h - 2);
+  // Temperature title not drawn — tick labels are self-explanatory
 
   ctx.save();
   ctx.translate(10, PAD.top + plotH / 2);

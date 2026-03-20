@@ -45,7 +45,26 @@
     </aside>
 
     <!-- Center: 3D star viewport -->
-    <main id="viewport"></main>
+    <main id="viewport">
+      <div id="mobile-viewport-icons">
+        <button id="mobile-sunglasses-btn" title="Sunglasses">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M2 12c0-2 2-4 5-4s4 2 4 4-1 4-4 4-5-2-5-4z"/>
+            <path d="M13 12c0-2 2-4 5-4s4 2 4 4-1 4-4 4-5-2-5-4z"/>
+            <path d="M10 11c.5-.8 1.5-1.2 3-0.2"/>
+            <path d="M2 10c.5-1 1-1.5 2-2"/>
+            <path d="M20 8c.5.3 1 .8 1.5 1.5"/>
+          </svg>
+        </button>
+        <button id="mobile-slice-btn" title="Show Slice">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="12" cy="12" r="9"/>
+            <line x1="12" y1="3" x2="12" y2="21"/>
+            <path d="M12 5c-1.5 1.5-3 4-3 7s1.5 5.5 3 7"/>
+          </svg>
+        </button>
+      </div>
+    </main>
 
     <!-- Info overlay: bottom-left of viewport -->
     <!-- Scale bar: bottom-left of viewport -->
@@ -65,6 +84,10 @@
         <span id="speed-separator">|</span>
         <input type="range" id="time-speed" min="0" max="1000" step="1" value="500" title="Evolution speed" />
         <span id="speed-value">10 Myr/s</span>
+        <span id="mobile-controls-right">
+          <button id="mobile-reset" title="Reset to Sun">Reset</button>
+          <button id="drawer-toggle" title="Parameters">&#x2699;</button>
+        </span>
       </div>
       <div id="playback-options">
         <label id="slowmo-label"><input type="checkbox" id="slowmo-toggle" checked /> Slow motion during final stages</label>
@@ -77,6 +100,7 @@
 
     <!-- Right panel -->
     <aside id="right-panel">
+      <div id="mobile-drag-handle"><span></span></div>
       <!-- Star tab (default) -->
       <div id="tab-star" class="tab-content active">
         <div id="hr-panel" class="mini-panel">
@@ -99,6 +123,11 @@
             <span class="help-icon" data-tooltip="Top: mass fractions of hydrogen (H), helium (He), and metals (Z). As time passes, H fuses into He. Bottom: the mean molecular weight μ, which measures the average mass per particle in the plasma. As H → He, μ increases (fewer light particles per unit mass), raising core temperature and luminosity — a key feedback loop in stellar evolution.">?</span>
           </div>
           <canvas id="species-canvas"></canvas>
+        </div>
+        <div id="carousel-dots">
+          <span class="dot active"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
         </div>
       </div>
 
@@ -131,6 +160,21 @@
         </div>
       </div>
     </aside>
+
+    <!-- Mobile drawer (parameters + toggles, hidden on desktop) -->
+    <div id="mobile-drawer">
+      <div id="mobile-drawer-header">
+        <span>Parameters</span>
+        <button id="drawer-close">&times;</button>
+      </div>
+      <div id="mobile-sliders"></div>
+      <!-- Sunglasses/Slice toggles moved to viewport icons -->
+      <div id="mobile-drawer-actions">
+        <button id="mobile-reset-btn">Reset to Sun</button>
+        <label id="mobile-slowmo"><input type="checkbox" id="mobile-slowmo-toggle" checked /> Slow motion</label>
+      </div>
+    </div>
+    <div id="drawer-backdrop"></div>
   </div>
 
   <div id="star-tooltip" class="star-tooltip" style="display: none;"></div>
