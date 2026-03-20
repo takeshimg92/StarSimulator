@@ -49,6 +49,8 @@ npx vercel --prod
 - **Stellar winds:** late-stage mass loss for massive stars (Wolf-Rayet, AGB winds)
 - **Proto-star formation:** pre-main-sequence contraction phase (Hayashi/Henyey tracks)
 - **More realistic nebulae:** structured planetary nebulae and supernova remnants with filaments, asymmetry, and color gradients
+- **EEP interpolation:** replace age-based track interpolation with Equivalent Evolutionary Phase interpolation for more accurate intermediate masses
+- **Mass-dependent limb darkening:** interpolate coefficients from tables (e.g. Claret 2000) based on T_eff and log g
 
 ## Data attribution
 

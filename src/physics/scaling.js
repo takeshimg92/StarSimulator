@@ -19,7 +19,7 @@ export function radiusFromMass(mass) {
 
 /**
  * Luminosity from mass (L/L☉ as a function of M/M☉).
- * L ∝ M^4 for M < 0.43, L ∝ M^3.5 for 0.43 < M < 2, L ∝ M^2.5 for M > 2
+ * L ≈ 0.23·M^2.3 for M < 0.43, L ≈ M^4 for 0.43 < M < 2, L ≈ 1.4·M^3.5 for M > 2
  */
 export function luminosityFromMass(mass) {
   if (mass < 0.43) return 0.23 * Math.pow(mass, 2.3);

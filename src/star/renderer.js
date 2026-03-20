@@ -226,6 +226,7 @@ export function initRenderer(container) {
       uTint: { value: new THREE.Vector3(1, 1, 1) },
       uTime: { value: 0.0 },
       uSliceEnabled: { value: 0.0 },
+      uGranScale: { value: 18.0 },
     },
     vertexShader: starVertexShader,
     fragmentShader: starFragmentShader,
@@ -751,8 +752,8 @@ function getZoneStructure(mass, evoState) {
       coreConvective = false;
       convInner = coreR + 0.04;
       convOuter = 1.0;
-      shells.push({ rFrac: coreR + 0.03, width: 0.012, intensity: 0.6, color: 'H' });
-      shells.push({ rFrac: coreR * 0.7, width: 0.008, intensity: 0.4, color: 'He' });
+      shells.push({ rFrac: coreR + 0.04, width: 0.012, intensity: 0.6, color: 'H' });
+      shells.push({ rFrac: coreR + 0.01, width: 0.008, intensity: 0.4, color: 'He' });
       break;
 
     case 5: // TP-AGB: similar to EAGB
@@ -760,8 +761,8 @@ function getZoneStructure(mass, evoState) {
       coreConvective = false;
       convInner = coreR + 0.03;
       convOuter = 1.0;
-      shells.push({ rFrac: coreR + 0.02, width: 0.01, intensity: 0.5, color: 'H' });
-      shells.push({ rFrac: coreR * 0.6, width: 0.008, intensity: 0.3, color: 'He' });
+      shells.push({ rFrac: coreR + 0.04, width: 0.01, intensity: 0.5, color: 'H' });
+      shells.push({ rFrac: coreR + 0.01, width: 0.008, intensity: 0.3, color: 'He' });
       break;
 
     case 9: // Wolf-Rayet
@@ -1292,6 +1293,12 @@ export function setSpotActivity(density, size) {
   if (starMaterial) {
     starMaterial.uniforms.uSpotDensity.value = density;
     starMaterial.uniforms.uSpotSize.value = size;
+  }
+}
+
+export function setGranulationScale(scale) {
+  if (starMaterial) {
+    starMaterial.uniforms.uGranScale.value = scale;
   }
 }
 

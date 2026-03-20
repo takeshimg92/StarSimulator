@@ -91,6 +91,7 @@ function interpTrackAtAge(trackKey, ageYears) {
 function extractRow(t, i) {
   return {
     age: t.star_age[i],
+    starMass: t.star_mass ? t.star_mass[i] : undefined,
     logL: t.log_L[i],
     logTeff: t.log_Teff[i],
     logR: t.log_R[i],
@@ -108,6 +109,7 @@ function lerpRows(t, i, j, frac) {
   const lerp = (a, b) => a + (b - a) * frac;
   return {
     age: lerp(t.star_age[i], t.star_age[j]),
+    starMass: t.star_mass ? lerp(t.star_mass[i], t.star_mass[j]) : undefined,
     logL: lerp(t.log_L[i], t.log_L[j]),
     logTeff: lerp(t.log_Teff[i], t.log_Teff[j]),
     logR: lerp(t.log_R[i], t.log_R[j]),
@@ -155,6 +157,8 @@ export function getStateAtAge(mass, ageYears) {
     R: Math.pow(10, logR),           // in R☉
     logTc: lerp(stLo.logTc, stHi.logTc),
     logRhoc: lerp(stLo.logRhoc, stHi.logRhoc),
+    starMass: (stLo.starMass !== undefined && stHi.starMass !== undefined)
+      ? lerp(stLo.starMass, stHi.starMass) : undefined,
     heCoreM: lerp(stLo.heCoreM, stHi.heCoreM),
     Xc: lerp(stLo.Xc, stHi.Xc),     // core hydrogen
     Yc: lerp(stLo.Yc, stHi.Yc),     // core helium

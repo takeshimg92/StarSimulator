@@ -65,6 +65,7 @@ export const starFragmentShader = /* glsl */ `
   uniform vec3 uTint; // color tint (1,1,1 = none, warm = sunglasses)
   uniform float uTime;
   uniform float uSliceEnabled;
+  uniform float uGranScale;  // Worley frequency for granulation (lower = larger cells)
 
   varying vec3 vNormal;
   varying vec3 vViewDir;
@@ -174,7 +175,7 @@ export const starFragmentShader = /* glsl */ `
       // ---- Granulation (convection cells) ----
       // Animated: cells bubble and reshape over time
       vec3 granPos = surfaceDir + vec3(t * 0.08, t * 0.05, t * -0.06);
-      vec2 gran = worley2(granPos, 18.0);
+      vec2 gran = worley2(granPos, uGranScale);
       float cellEdge = gran.y - gran.x;
       float granulation = smoothstep(0.0, 0.25, cellEdge);
       brightness *= 0.90 + 0.10 * granulation;

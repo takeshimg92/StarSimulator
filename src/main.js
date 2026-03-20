@@ -1,4 +1,4 @@
-import { initRenderer, updateStarAppearance, setSunglasses, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup, getScaleBarInfo, setOnFrameCallback, triggerEndOfLife, getZoneStructure, getRemnantType, setSpotActivity, setLightMode } from './star/renderer.js';
+import { initRenderer, updateStarAppearance, setSunglasses, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup, getScaleBarInfo, setOnFrameCallback, triggerEndOfLife, getZoneStructure, getRemnantType, setSpotActivity, setGranulationScale, setLightMode } from './star/renderer.js';
 import { computeProfiles } from './physics/stellar.js';
 import { constants } from './physics/constants.js';
 import { createSliders } from './ui/sliders.js';
@@ -114,6 +114,11 @@ function onParametersChanged({ mass, radius, temperature, hydrogen }, { wobble =
   // Spot size: larger relative coverage for low-mass stars, tiny for solar-type
   const sizeFactor = mass < 0.5 ? 0.8 : mass < 1.3 ? 0.2 : 0.1;
   setSpotActivity(density, sizeFactor);
+  // Granulation cell size scales with pressure scale height ∝ R²/M (inverse surface gravity)
+  // Sun (M=1, R=1) → scale 18; red giant (R=100, M=1) → much larger cells → lower frequency
+  const surfaceGrav = mass / (radius * radius); // in solar units
+  const granScale = Math.max(2, Math.min(30, 18.0 * surfaceGrav));
+  setGranulationScale(granScale);
 
   updateParticleComposition(comp.X_core, comp.Y_core);
   drawSpecies(comp, mu, evolution.getAge() / 1e9);
@@ -124,7 +129,8 @@ function onParametersChanged({ mass, radius, temperature, hydrogen }, { wobble =
     const Lsolar = profiles.L / L_sun;
     const rStr = radius >= 10 ? `${Math.round(radius)}` : `${radius.toFixed(1)}`;
     const lStr = Lsolar >= 100 ? `${Math.round(Lsolar)}` : Lsolar >= 1 ? `${Lsolar.toFixed(1)}` : `${Lsolar.toFixed(3)}`;
-    starScaleDisplay.innerHTML = `R = ${rStr} R&#9737; &middot; T = ${Math.round(temperature)} K &middot; L = ${lStr} L&#9737;`;
+    const mStr = mass >= 10 ? `${Math.round(mass)}` : `${mass.toFixed(1)}`;
+    starScaleDisplay.innerHTML = `M = ${mStr} M&#9737; &middot; R = ${rStr} R&#9737; &middot; T = ${Math.round(temperature)} K &middot; L = ${lStr} L&#9737;`;
   }
 
   // Update scale bar

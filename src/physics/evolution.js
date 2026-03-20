@@ -96,13 +96,16 @@ export function step(dt, mass) {
     // Track ended?
     trackEnded = age >= state.maxAge;
 
+    // Use MIST mass (includes wind mass loss) if available
+    const effectiveMass = state.starMass !== undefined ? state.starMass : currentMass;
+
     return {
-      mass: Math.round(currentMass * 10) / 10,
+      mass: Math.round(effectiveMass * 100) / 100,
       radius: Math.round(state.R * 100) / 100,
       temperature: Math.round(state.Teff),
       luminosity: state.L,  // in L☉
       X: X_core,
-      Y: 1 - X_core - Z,
+      Y: Y_core_fromTrack,
       age,
       phase: currentPhase,
       phaseName: currentPhaseName,
@@ -166,13 +169,14 @@ export function lookupCurrentState() {
   Y_core_fromTrack = state.Yc !== undefined ? state.Yc : (1 - X_core - Z);
   heCoreM_fromTrack = state.heCoreM || 0;
   trackEnded = age >= state.maxAge;
+  const effectiveMass = state.starMass !== undefined ? state.starMass : currentMass;
   return {
-    mass: Math.round(currentMass * 10) / 10,
+    mass: Math.round(effectiveMass * 100) / 100,
     radius: Math.round(state.R * 100) / 100,
     temperature: Math.round(state.Teff),
     luminosity: state.L,
     X: X_core,
-    Y: 1 - X_core - Z,
+    Y: Y_core_fromTrack,
     age,
     phase: currentPhase,
     phaseName: currentPhaseName,

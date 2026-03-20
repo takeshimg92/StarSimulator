@@ -61,10 +61,10 @@ describe('MIST tracks', () => {
 
   it('REGRESSION: interpolated mass (24.1 M☉) uses nearest track maxAge', () => {
     const maxAge = getMaxAge(24.1);
-    // 24.1 is between 20 and 30, closer to 20 (frac=0.41 < 0.5)
-    // Should use 20 M☉ track's maxAge (~9.62 Myr), NOT interpolated
-    const maxAge20 = getMaxAge(20.0);
-    expect(maxAge).toBe(maxAge20);
+    // 24.1 is between 24.0 and 26.0, closer to 24 (frac=0.05 < 0.5)
+    // Should use 24 M☉ track's maxAge, NOT interpolated
+    const maxAge24 = getMaxAge(24.0);
+    expect(maxAge).toBe(maxAge24);
   });
 
   it('ZAMS age < max age for all masses', () => {

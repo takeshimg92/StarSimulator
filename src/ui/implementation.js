@@ -205,6 +205,20 @@ Zoom range is 1.5–600 (in scene units), with the starfield sphere at $r = 900$
 
 <b>Implementation detail:</b> inactive photon and nebula particles are placed at $z = 99{,}999$ (far beyond the camera far plane) rather than at a finite offscreen distance, preventing them from accumulating into a visible artifact when the camera is freely rotated.`,
   },
+  {
+    title: 'Known Limitations & Simplifications',
+    body: `This simulator makes several deliberate trade-offs between physical accuracy and real-time performance. Below are the most significant simplifications, roughly ordered by impact:
+
+<ul>
+<li><b>Age-based track interpolation:</b> When the user selects a mass between two MIST tracks, the simulator interpolates at the same absolute age. This can blend two stars in very different evolutionary phases (e.g., one still on the main sequence, the other already on the RGB). A more robust approach would use Equivalent Evolutionary Phase (EEP) interpolation, as done by isochrone codes. This is the single largest source of inaccuracy for interpolated masses near phase boundaries.</li>
+<li><b>No mass loss:</b> The star retains its initial mass throughout its lifetime. In reality, RGB and AGB stars can lose 30–50% of their mass via stellar winds, and massive O/WR stars lose even more. The displayed mass is always the initial mass, which becomes increasingly misleading in late evolutionary phases.</li>
+<li><b>Convection zone boundaries are heuristic:</b> The cross-section view uses simple mass-based rules to place the convective/radiative boundary, not the Schwarzschild criterion. MIST tracks do not export convective boundary radii, so there is no authoritative data to match.</li>
+<li><b>Visual scale compression:</b> The star's on-screen size scales as $R^{0.7}$ rather than linearly with radius. A 100 $R_\\odot$ red giant appears $\\sim$25 times larger than the Sun instead of 100 times. This compression is necessary to keep both dwarfs and giants visible without extreme zooming, but it understates the dramatic size differences between evolutionary phases.</li>
+<li><b>Fixed limb-darkening law:</b> A single quadratic law tuned for the Sun is used for all stars. In practice, limb-darkening coefficients depend on temperature, surface gravity, and wavelength. The error is modest for solar-type stars but noticeable for very hot or very cool stars.</li>
+<li><b>Boosted color saturation:</b> Blackbody colors are deliberately over-saturated (×1.4 for cool stars, ×1.15 for hot stars) to make temperature differences visually obvious. Real stars appear much closer to white.</li>
+<li><b>Approximate gravitational lensing:</b> The black hole lensing shader places the photon ring at the correct $1.5\\,r_S$ but uses an ad-hoc $1/r^2$ deflection profile rather than the Schwarzschild metric. The shadow size is also approximate.</li>
+</ul>`,
+  },
 ];
 
 function renderInlineLatex(text) {
