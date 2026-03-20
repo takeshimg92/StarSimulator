@@ -698,8 +698,8 @@ input[type="range"]::-moz-range-thumb {
 
 /* Inline KaTeX within paragraphs */
 .theory-section p .katex {
-  font-size: 0.85em;
-  color: rgba(255, 220, 170, 0.85);
+  font-size: 1.05em;
+  color: rgba(255, 220, 170, 0.9);
 }
 
 /* About tab */
