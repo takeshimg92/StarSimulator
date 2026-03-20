@@ -1255,11 +1255,20 @@ export function updateStarAppearance(temperature, radius, luminosity, { wobble =
   target.b = rgb.b;
   target.scale = newScale;
 
-  // Bloom scales mildly with luminosity
+  // Bloom scales with luminosity: dramatic glow for high-L stars
+  // logL ranges from ~-4 (faint red dwarfs) to ~6 (supergiants)
   const L_sun = 3.828e26;
   const logL = Math.log10(Math.max(luminosity, 1e20) / L_sun);
-  baseBloom = Math.max(0.4, Math.min(1.2, 0.6 + logL * 0.15));
+  // Strength: 0.3 at logL=-4, ~0.8 at logL=0 (Sun), ~2.5 at logL=6
+  baseBloom = Math.max(0.3, Math.min(2.5, 0.8 + logL * 0.3));
   target.bloom = baseBloom;
+  // Radius: tight halo for dim stars, wide wash for luminous ones
+  // 0.1 at logL≤0, up to 0.8 for supergiants
+  if (bloomPass) {
+    bloomPass.radius = Math.max(0.1, Math.min(0.8, 0.15 + Math.max(0, logL) * 0.11));
+    // Lower threshold for high-L so the glow spreads beyond just the star
+    bloomPass.threshold = Math.max(0.05, 0.3 - Math.max(0, logL) * 0.04);
+  }
 
   // Photon emission rate scales with luminosity
   const maxPhotons = isMobile() ? 600 : 1800;
@@ -1402,11 +1411,19 @@ function updateEndOfLife(dt) {
     target.b = target.b * 0.98 + 1.0 * 0.02;
   }
 
+  // Fade bloom during death animation
+  baseBloom = baseBloom * (1 - t);
+  target.bloom = baseBloom;
+
   if (t >= 1.0) {
     supernovaActive = false;
     frozen = true;
     stopPhotons();
     if (supernovaMass >= 25) {
+      // Black hole: faint residual bloom for lensing halo
+      baseBloom = 0.25;
+      target.bloom = 0.25; current.bloom = 0.25;
+      if (bloomPass) { bloomPass.radius = 0.15; }
       target.scale = 0.15;
       target.r = 0; target.g = 0; target.b = 0;
       starMaterial.uniforms.uBrightness.value = 0;
@@ -1414,12 +1431,20 @@ function updateEndOfLife(dt) {
       remnantType = 'blackhole';
       currentPhysicalRadius = 0.00004;
     } else if (supernovaMass >= 8) {
+      // Neutron star: small but intense bloom
+      baseBloom = 0.6;
+      target.bloom = 0.6; current.bloom = 0.6;
+      if (bloomPass) { bloomPass.radius = 0.2; }
       target.scale = 0.03;
       target.r = 0.6; target.g = 0.75; target.b = 1.0;
       starMaterial.uniforms.uBrightness.value = 2.5;
       remnantType = 'neutronstar';
       currentPhysicalRadius = 0.000015;
     } else {
+      // White dwarf: gentle soft glow
+      baseBloom = 0.4;
+      target.bloom = 0.4; current.bloom = 0.4;
+      if (bloomPass) { bloomPass.radius = 0.15; }
       target.scale = 0.04;
       target.r = 0.8; target.g = 0.85; target.b = 1.0;
       starMaterial.uniforms.uBrightness.value = 0.6;
