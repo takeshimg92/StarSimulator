@@ -45,10 +45,21 @@ function updateAgeDisplay() {
     : `Age: ${ageGyr.toFixed(3)} billion years`;
   ageDisplay.innerHTML = ageStr +
     (phaseName ? ` <span style="color:rgba(255,200,100,0.5);font-size:11px">&middot; ${phaseName}</span>` : '');
+  syncPanelBottom();
 }
 
 const _isMobile = () => window.innerWidth < 768;
 let _mobileDrawerOpen = false;
+
+// Keep right panel positioned above playback controls on mobile
+function syncPanelBottom() {
+  if (!_isMobile()) return;
+  const playback = document.getElementById('playback-controls');
+  const panel = document.getElementById('right-panel');
+  if (playback && panel) {
+    panel.style.bottom = playback.offsetHeight + 'px';
+  }
+}
 
 function onParametersChanged({ mass, radius, temperature, hydrogen }, { wobble = true } = {}) {
   // Sync hydrogen slider to evolution only if user manually changed it
@@ -511,6 +522,7 @@ async function init() {
   // Initial render
   onParametersChanged(sliderControls.getValues());
   updateAgeDisplay();
+  syncPanelBottom();
 
   // Tooltips
   initTooltips();
@@ -527,6 +539,7 @@ async function init() {
   // so a deferred resize is triggered when switching back to the star tab.
   let resizePending = false;
   window.addEventListener('resize', () => {
+    syncPanelBottom();
     resizeHRCanvas();
     resizeParticleCanvas();
     resizeSpeciesCanvas();
@@ -685,39 +698,61 @@ function initMobile(sliderControls) {
       return active && active.dataset.tab === 'star';
     }
 
-    // Swipe on the entire right panel (not just the handle)
-    rightPanel.addEventListener('touchstart', (e) => {
-      startY = e.touches[0].clientY;
-    }, { passive: true });
+    // Vertical swipe handler — attach to any element
+    let startX = 0;
+    function addPanelSwipe(el) {
+      el.addEventListener('touchstart', (e) => {
+        startY = e.touches[0].clientY;
+        startX = e.touches[0].clientX;
+        if (e.target) e.target._touchStartX = startX;
+      }, { passive: true });
 
-    rightPanel.addEventListener('touchend', (e) => {
-      if (!isStarTab()) return;
-      const endY = e.changedTouches[0].clientY;
-      const dy = startY - endY; // positive = swiped up
-      if (Math.abs(dy) < 30) return; // too small
-      if (dy > 30) {
-        if (panelState === 'minimized') setPanelState('default');
-        else if (panelState === 'default') setPanelState('expanded');
-      } else if (dy < -30) {
-        if (panelState === 'expanded') setPanelState('default');
-        else if (panelState === 'default') setPanelState('minimized');
-      }
-    }, { passive: true });
+      el.addEventListener('touchend', (e) => {
+        if (!isStarTab()) return;
+        const endY = e.changedTouches[0].clientY;
+        const endX = e.changedTouches[0].clientX;
+        const dy = startY - endY; // positive = swiped up
+        const dx = Math.abs(endX - startX);
+        if (Math.abs(dy) < 30 || dx > Math.abs(dy)) return;
+        if (dy > 30) {
+          if (panelState === 'minimized') setPanelState('default');
+          else if (panelState === 'default') setPanelState('expanded');
+        } else if (dy < -30) {
+          if (panelState === 'expanded') setPanelState('default');
+          else if (panelState === 'default') setPanelState('minimized');
+        }
+      }, { passive: true });
+    }
 
-    // Track horizontal start for distinguishing swipe directions
-    rightPanel.addEventListener('touchstart', (e) => {
-      if (e.target) e.target._touchStartX = e.touches[0].clientX;
-    }, { passive: true });
+    // Swipe on the right panel and playback controls
+    addPanelSwipe(rightPanel);
+    const playbackEl = document.getElementById('playback-controls');
+    if (playbackEl) addPanelSwipe(playbackEl);
 
-    // Tap on the drag handle cycles state
+    // Tap/swipe on the drag handle — non-passive to guarantee capture
     const dragHandle = document.getElementById('mobile-drag-handle');
     if (dragHandle) {
-      dragHandle.addEventListener('click', () => {
+      let handleStartY = 0;
+      dragHandle.addEventListener('touchstart', (e) => {
+        handleStartY = e.touches[0].clientY;
+        e.stopPropagation(); // prevent TrackballControls from stealing
+      }, { passive: true });
+      dragHandle.addEventListener('touchend', (e) => {
         if (!isStarTab()) return;
-        if (panelState === 'minimized') setPanelState('default');
-        else if (panelState === 'default') setPanelState('expanded');
-        else setPanelState('minimized');
-      });
+        const dy = handleStartY - e.changedTouches[0].clientY;
+        if (Math.abs(dy) < 15) {
+          // Tap — cycle state
+          if (panelState === 'minimized') setPanelState('default');
+          else if (panelState === 'default') setPanelState('expanded');
+          else setPanelState('minimized');
+        } else if (dy > 15) {
+          if (panelState === 'minimized') setPanelState('default');
+          else if (panelState === 'default') setPanelState('expanded');
+        } else {
+          if (panelState === 'expanded') setPanelState('default');
+          else if (panelState === 'default') setPanelState('minimized');
+        }
+      }, { passive: true });
     }
 
     // Tap on viewport collapses expanded panel to default

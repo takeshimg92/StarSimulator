@@ -941,21 +941,26 @@ input[type="range"]::-moz-range-thumb {
   /* --- Right panel: anchored above playback controls at bottom --- */
   #right-panel {
     position: fixed;
-    bottom: 80px; /* above playback controls */
+    bottom: 80px; /* fallback; JS syncPanelBottom() adjusts dynamically */
     left: 0;
     right: 0;
     height: auto;
     background: transparent;
     overflow: visible;
-    z-index: 4;
+    z-index: 6; /* above playback (5) so drag handle always receives touches */
+    touch-action: pan-x; /* allow horizontal carousel, capture vertical for panel swipe */
   }
 
   /* Drag handle */
   #mobile-drag-handle {
     display: flex;
+    flex-direction: column;
+    align-items: center;
     justify-content: center;
-    padding: 6px 0 2px;
+    padding: 8px 0 4px;
     cursor: grab;
+    min-height: 36px;
+    touch-action: none;
   }
 
   #mobile-drag-handle span {
@@ -965,15 +970,26 @@ input[type="range"]::-moz-range-thumb {
     background: rgba(255, 255, 255, 0.25);
   }
 
+  .handle-chevron {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.35);
+    margin-top: 2px;
+    transition: transform 0.3s ease;
+  }
+
+  #right-panel.expanded-mobile .handle-chevron {
+    transform: rotate(180deg);
+  }
+
   #right-panel {
     transition: height 0.3s ease;
     overflow: hidden;
     height: 150px; /* default state */
   }
 
-  /* Minimized: just the drag handle */
+  /* Minimized: visible grab area with chevron */
   #right-panel.minimized-mobile {
-    height: 20px;
+    height: 36px;
   }
 
   /* Expanded: tall panel */
