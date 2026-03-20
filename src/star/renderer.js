@@ -176,16 +176,20 @@ let nebulaStartScale = 1.0; // star's scale when nebula spawns
 export function initRenderer(container) {
   scene = new THREE.Scene();
 
+  // Guard against zero-size container (mobile reload before layout paint)
+  const w = container.clientWidth || window.innerWidth;
+  const h = container.clientHeight || window.innerHeight;
+
   camera = new THREE.PerspectiveCamera(
     45,
-    container.clientWidth / container.clientHeight,
+    w / h,
     0.1,
     2000
   );
   camera.position.z = 5;
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setSize(w, h);
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setClearColor(0x000000, 1);
   renderer.toneMapping = THREE.LinearToneMapping;
@@ -197,7 +201,7 @@ export function initRenderer(container) {
   composer.addPass(new RenderPass(scene, camera));
 
   bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(container.clientWidth, container.clientHeight),
+    new THREE.Vector2(w, h),
     0.8,   // strength — subtle glow
     0.15,  // radius — tight halo
     0.3    // threshold
