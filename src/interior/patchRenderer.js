@@ -10,9 +10,9 @@
 
 import { getColormap, FIELD_INFO } from './colormaps.js';
 
-const PARTICLE_COUNT = 400;
-const PARTICLE_MAX_AGE = 250;
-const PARTICLE_RADIUS = 0.8;
+const PARTICLE_COUNT = 800;
+const PARTICLE_MAX_AGE = 180;
+const TRAIL_WIDTH = 0.5; // in CSS pixels
 
 export class PatchRenderer {
   /**
@@ -108,7 +108,7 @@ export class PatchRenderer {
     if (!this.sim) return;
     const { Nx, Ny } = this.sim;
     this.particles = [];
-    this._prevPos = new Float64Array(PARTICLE_COUNT * 2).fill(-1); // px, py pairs
+    this._prevPos = new Float64Array(PARTICLE_COUNT * 2).fill(-1);
     for (let p = 0; p < PARTICLE_COUNT; p++) {
       this.particles.push(this._spawnParticle());
     }
@@ -348,16 +348,16 @@ export class PatchRenderer {
     }
     const tctx = this._trailCtx;
 
-    // Fade trails slowly — lower alpha = longer-lasting trails
+    // Fade trails — balance between persistence and not obscuring heatmap
     tctx.globalCompositeOperation = 'destination-out';
-    tctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
+    tctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
     tctx.fillRect(0, 0, this.size, this.size);
     tctx.globalCompositeOperation = 'source-over';
 
     const dpr = this.dpr;
-    // Normalize advection so particles move ~0.3 grid cells/frame at max velocity,
-    // regardless of Ra. Without this, high-Ra flows fling particles out of bounds.
-    const advectScale = maxV > 0.01 ? 0.3 / maxV : 0;
+    // Normalize so particles move ~0.15 grid cells/frame at max velocity.
+    // Slower = smoother trails, less chaotic appearance.
+    const advectScale = maxV > 0.01 ? 0.15 / maxV : 0;
 
     for (let pidx = 0; pidx < particles.length; pidx++) {
       const p = particles[pidx];
@@ -405,9 +405,9 @@ export class PatchRenderer {
       if (prevPx >= 0 && prevPy >= 0) {
         // Only draw if the segment isn't too long (skip respawn jumps)
         const segLen = Math.sqrt((px - prevPx) ** 2 + (py - prevPy) ** 2);
-        if (segLen < this.size * 0.15) {
-          tctx.strokeStyle = 'rgba(220, 220, 220, 0.7)';
-          tctx.lineWidth = PARTICLE_RADIUS * dpr * 2;
+        if (segLen < this.size * 0.1) {
+          tctx.strokeStyle = 'rgba(230, 230, 230, 0.35)';
+          tctx.lineWidth = TRAIL_WIDTH * dpr;
           tctx.lineCap = 'round';
           tctx.beginPath();
           tctx.moveTo(prevPx, prevPy);
