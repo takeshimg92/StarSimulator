@@ -1186,28 +1186,23 @@ function animate() {
   controls.minDistance = Math.max(1.5, scale * 1.2);
   controls.maxDistance = 600;
 
-  // Push camera out if it's inside the star (can happen on fast mass increase)
+  // Detect if camera is inside the star
   const camDist = camera.position.length();
-  const insideStar = camDist < scale * 1.3;
-  if (insideStar) {
-    // Smoothly push outward instead of jumping (lerp toward safe distance)
-    const pushDist = scale * 2.5;
-    const dir = camera.position.clone().normalize();
-    const targetPos = dir.multiplyScalar(pushDist);
-    camera.position.lerp(targetPos, 0.15); // smooth push over several frames
-  }
+  const insideStar = camDist < scale * 1.2;
 
-  // Show/hide "inside star" overlay
+  // Don't fight the camera — just show overlay and let user zoom out.
+  // The minDistance constraint above prevents zooming further in.
   let insideOverlay = document.getElementById('inside-star-overlay');
   if (insideStar) {
     if (!insideOverlay) {
       insideOverlay = document.createElement('div');
       insideOverlay.id = 'inside-star-overlay';
       insideOverlay.style.cssText = 'position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;pointer-events:none;transition:opacity 0.3s';
-      insideOverlay.innerHTML = '<div style="color:rgba(80,60,30,0.9);font:14px Inter,sans-serif;text-align:center;text-shadow:0 0 20px rgba(255,200,100,0.5)">You are inside the star<br><span style="font-size:11px;opacity:0.6">Scroll to zoom out</span></div>';
+      insideOverlay.innerHTML = '<div style="color:rgba(80,60,30,0.9);font:14px Inter,sans-serif;text-align:center;text-shadow:0 0 20px rgba(255,200,100,0.5)">You are inside the star<br><span style="font-size:11px;opacity:0.6">Scroll to zoom out, or reduce the mass</span></div>';
       document.getElementById('viewport').appendChild(insideOverlay);
     }
-    insideOverlay.style.background = `rgba(255,240,200,${Math.min(0.85, 1.3 - camDist / scale)})`;
+    const depth = Math.max(0, 1.2 - camDist / scale);
+    insideOverlay.style.background = `rgba(255,240,200,${Math.min(0.9, depth * 2)})`;
     insideOverlay.style.opacity = '1';
   } else if (insideOverlay) {
     insideOverlay.style.opacity = '0';
