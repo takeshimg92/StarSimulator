@@ -1317,7 +1317,7 @@ export function updateStarAppearance(temperature, radius, luminosity, { wobble =
   // Radius: tight halo for dim stars, wide wash for luminous ones
   // 0.1 at logL≤0, up to 0.8 for supergiants
   if (bloomPass) {
-    bloomPass.radius = Math.max(0.1, Math.min(0.8, 0.15 + Math.max(0, logL) * 0.11));
+    bloomPass.radius = Math.max(0.1, Math.min(0.4, 0.12 + Math.max(0, logL) * 0.04));
     // Lower threshold for high-L so the glow spreads beyond just the star
     bloomPass.threshold = Math.max(0.05, 0.3 - Math.max(0, logL) * 0.04);
   }
