@@ -503,9 +503,9 @@ function initInteriorPanel() {
   const depthLabel = document.getElementById('interior-depth-label');
   if (depthSlider) {
     depthSlider.addEventListener('input', (e) => {
-      // Slider 0-100 maps to r/R = 0.99 (surface) down to 0.50 (deep)
+      // Slider 0-100 maps to r/R = 0.99 (surface) down to 0.05 (near center)
       const val = parseInt(e.target.value);
-      currentDepthFrac = 0.99 - (val / 100) * 0.49;
+      currentDepthFrac = 0.99 - (val / 100) * 0.94;
       if (depthLabel) depthLabel.textContent = `r/R = ${currentDepthFrac.toFixed(2)}`;
       // Force recompute of the patch sim
       rebuildPatchSim();
@@ -655,8 +655,18 @@ function computeLocalPatchParams(model, rFrac) {
   };
 }
 
-function rebuildPatchSim() {
+let _rebuildPending = false;
+
+async function rebuildPatchSim() {
   if (!interiorModel || !patchRenderer) return;
+  if (_rebuildPending) return; // debounce
+  _rebuildPending = true;
+
+  const loadingEl = document.getElementById('interior-loading');
+  if (loadingEl) loadingEl.style.display = '';
+
+  // Yield to browser so loading indicator renders before blocking
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
   const info = computeLocalPatchParams(interiorModel, currentDepthFrac);
 
@@ -666,9 +676,7 @@ function rebuildPatchSim() {
     Pr: 0.7,
   });
 
-  // Enough steps to develop visible convection cells before first render.
-  // For high Ra (convective zones), cells form quickly. For low Ra, this
-  // just diffuses the noise — still fast since there's no flow to advect.
+  // Develop convection cells before first visible render
   patchSim.fastForward(150, 0.01);
 
   patchRenderer.setSim(patchSim);
@@ -681,6 +689,9 @@ function rebuildPatchSim() {
     isConvective: info.isConvective,
     Ra: info.Ra_eff,
   });
+
+  if (loadingEl) loadingEl.style.display = 'none';
+  _rebuildPending = false;
 }
 
 function _dead() { /*

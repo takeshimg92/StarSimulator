@@ -1431,6 +1431,23 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 0 0 8px 0;
 }
 
+#interior-canvas-wrap {
+  position: relative;
+}
+
+#interior-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 200, 80, 0.8);
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  border-radius: 4px;
+}
+
 #interior-depth-control {
   padding: 4px 6px 2px;
   font-size: 10px;

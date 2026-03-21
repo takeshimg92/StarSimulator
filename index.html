@@ -78,7 +78,10 @@
           <button class="field-btn" data-field="velocity" title="Velocity">v</button>
         </div>
       </div>
-      <canvas id="interior-canvas"></canvas>
+      <div id="interior-canvas-wrap">
+        <canvas id="interior-canvas"></canvas>
+        <div id="interior-loading" style="display: none;">Computing...</div>
+      </div>
       <div id="interior-depth-control">
         <label>Depth: <span id="interior-depth-label">r/R = 0.85</span></label>
         <input type="range" id="interior-depth-slider" min="0" max="100" value="50" />

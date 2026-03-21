@@ -313,16 +313,13 @@ export class PatchRenderer {
     }
     ctx.restore();
 
-    // Box position: show as a highlighted radial band
+    // Box position: fixed-size marker at the current depth
+    // (constant visual size so it doesn't distort as H_P changes)
     const rFrac = this.depthInfo.rFrac;
-    const R_star = this.model.radius * 6.957e8;
-    const H_P = this.depthInfo.H_P_km * 1000;
-    const boxHalfR = (1.75 * H_P / R_star); // half box height in r/R
-    const rInner = Math.max(0, rFrac - boxHalfR);
-    const rOuter = Math.min(1, rFrac + boxHalfR);
-
-    // Draw the box as a highlighted annular wedge (small angle for visibility)
-    const wedgeAngle = Math.PI / 6; // 30° for visibility
+    const markerHalf = 0.06; // fixed radial half-width in r/R
+    const rInner = Math.max(0, rFrac - markerHalf);
+    const rOuter = Math.min(1, rFrac + markerHalf);
+    const wedgeAngle = Math.PI / 5;
     const startAngle = -Math.PI / 2 - wedgeAngle / 2;
     const endAngle = -Math.PI / 2 + wedgeAngle / 2;
 
