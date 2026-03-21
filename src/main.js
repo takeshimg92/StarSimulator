@@ -621,10 +621,19 @@ function initInteriorPanel() {
 
 function setInteriorActive(active) {
   interiorActive = active;
-  const panel = document.getElementById('interior-float');
-  if (panel) {
-    panel.style.display = active ? '' : 'none';
+
+  // Desktop: show/hide floating panel (CSS hides it on mobile via !important)
+  const floatPanel = document.getElementById('interior-float');
+  if (floatPanel) {
+    floatPanel.style.display = active ? '' : 'none';
   }
+
+  // Mobile: show/hide carousel panel via class
+  const mobilePanel = document.getElementById('interior-mobile-panel');
+  if (mobilePanel) {
+    mobilePanel.classList.toggle('slice-active', active);
+  }
+
   if (active) {
     lastInteriorMass = null;
     if (sliderControls) {
@@ -856,9 +865,8 @@ function _dead() { /*
 */ }
 
 function updateInterior(mass) {
-  const hasMobile = !!patchRendererMobile;
-  if (!patchRenderer && !hasMobile) return;
-  if (!interiorActive && !hasMobile) return;
+  if (!patchRenderer && !patchRendererMobile) return;
+  if (!interiorActive) return;
 
   // Recompute interior model if mass changed
   if (mass !== lastInteriorMass) {
@@ -1002,7 +1010,7 @@ async function init() {
   // Interior heatmap render loop (runs when interior tab is active)
   function interiorRenderLoop() {
     requestAnimationFrame(interiorRenderLoop);
-    if (sliderControls && (interiorActive || patchRendererMobile)) {
+    if (sliderControls && interiorActive) {
       updateInterior(sliderControls.getValues().mass);
     }
   }

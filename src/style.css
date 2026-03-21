@@ -1032,7 +1032,12 @@ input[type="range"]::-moz-range-thumb {
     border-radius: 6px;
   }
 
+  /* Only show mobile interior panel when slice is active */
   #interior-mobile-panel {
+    display: none !important;
+  }
+
+  #interior-mobile-panel.slice-active {
     display: flex !important;
     flex-direction: column;
   }
@@ -1040,6 +1045,11 @@ input[type="range"]::-moz-range-thumb {
   #interior-mobile-panel canvas {
     flex: 1;
     min-height: 0;
+  }
+
+  /* Hide desktop floating panel on mobile */
+  #interior-float {
+    display: none !important;
   }
 
   #tab-star .mini-panel canvas {
@@ -1488,9 +1498,13 @@ input[type="range"]::-moz-range-thumb {
   accent-color: rgba(255, 200, 80, 0.7);
 }
 
-/* Hide mobile interior panel on desktop */
+/* Hide mobile interior panel on desktop, and when slice is off */
 #interior-mobile-panel {
   display: none;
+}
+
+#interior-mobile-panel.slice-active {
+  display: none; /* overridden by mobile media query below */
 }
 
 #interior-depth-control {
