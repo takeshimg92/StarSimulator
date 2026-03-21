@@ -347,10 +347,9 @@ export class PatchRenderer {
     }
     const tctx = this._trailCtx;
 
-    // Fade trails by clearing with slight transparency
-    // (globalCompositeOperation trick: draw semi-transparent black to dim old trails)
+    // Fade trails slowly — lower alpha = longer-lasting trails
     tctx.globalCompositeOperation = 'destination-out';
-    tctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+    tctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
     tctx.fillRect(0, 0, this.size, this.size);
     tctx.globalCompositeOperation = 'source-over';
 
