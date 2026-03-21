@@ -184,7 +184,12 @@ export class CartesianSim {
     T0.set(T);
     this._diffuse(T, T0, this.kappa_th, dt);
 
-    // 7. Enforce BCs
+    // 7. Subgrid turbulent forcing: small random velocity kicks
+    //    to maintain fine-scale structure that the coarse grid and
+    //    diffusive semi-Lagrangian advection would otherwise damp out
+    this._addTurbulentNoise(dt);
+
+    // 8. Enforce BCs
     this._enforceBCs();
 
     this.time += dt;
@@ -292,6 +297,21 @@ export class CartesianSim {
       this.set(vy, i, 0, 0);
       this.set(vx, i, Ny - 1, 0);
       this.set(vy, i, Ny - 1, 0);
+    }
+  }
+
+  _addTurbulentNoise(dt) {
+    const maxV = this.maxVelocity() || 0.01;
+    const noiseAmp = maxV * 0.005; // 0.5% of current max velocity
+    const { Nx, Ny, size } = this;
+
+    // Only add noise in the interior (not at boundaries)
+    for (let j = 2; j < Ny - 2; j++) {
+      for (let i = 0; i < Nx; i++) {
+        const k = this.idx(i, j);
+        this.vx[k] += (Math.random() - 0.5) * 2 * noiseAmp;
+        this.vy[k] += (Math.random() - 0.5) * 2 * noiseAmp;
+      }
     }
   }
 
