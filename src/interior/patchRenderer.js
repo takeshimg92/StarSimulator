@@ -363,10 +363,8 @@ export class PatchRenderer {
         ci += dt * vx2 / sim.dx;
         cj += dt * vy2 / sim.dy;
 
-        // Stop if out of bounds
-        if (cj < 0.5 || cj > Ny - 1.5 || ci < -Nx * 0.5 || ci > Nx * 1.5) break;
-        // Wrap x (periodic)
-        ci = ((ci % Nx) + Nx) % Nx;
+        // Stop if out of bounds (don't wrap — wrapping creates horizontal lines)
+        if (cj < 0.5 || cj > Ny - 1.5 || ci < 0 || ci > Nx - 1) break;
       }
 
       if (points.length < 3) continue;
