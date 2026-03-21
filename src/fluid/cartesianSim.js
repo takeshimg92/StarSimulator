@@ -44,14 +44,14 @@ export class CartesianSim {
     this.Pr = opts.Pr || 0.7;   // Prandtl number
 
     // Non-dimensionalization: box height H = 1, ΔT = 1, α = 1.
-    // Ra = g·α·ΔT·H³ / (ν·κ_th)
-    // Pr = ν / κ_th
+    // Ra = g·α·ΔT·H³ / (ν·κ_th),  Pr = ν / κ_th
     //
-    // Set κ_th = 1, ν = Pr, g_eff = Ra·Pr (= Ra·ν·κ_th with κ_th=1).
-    // This gives the correct coupling strength between T and v.
-    this.kappa_th = 1.0;
-    this.nu = this.Pr;       // Pr = ν/κ_th, so ν = Pr when κ_th = 1
-    this.g_eff = this.Ra * this.Pr;
+    // Choose κ_th so the diffusion CFL number a = κ_th·dt/dx² stays
+    // around 0.5, which the Gauss-Seidel solver can converge reliably.
+    // With dt ~ 0.002 and dx = 1/Ny ~ 0.0125:  κ_th ≈ 0.5·dx²/dt ≈ 0.04
+    this.kappa_th = 0.04;
+    this.nu = this.kappa_th * this.Pr;
+    this.g_eff = this.Ra * this.nu * this.kappa_th;
 
     this.T_bot = opts.T_bot ?? 1.0;
     this.T_top = opts.T_top ?? 0.0;
@@ -159,9 +159,9 @@ export class CartesianSim {
       this.vy.fill(0);
     }
 
-    this.kappa_th = 1.0;
-    this.nu = this.Pr;
-    this.g_eff = this.Ra * this.Pr;
+    this.kappa_th = 0.04;
+    this.nu = this.kappa_th * this.Pr;
+    this.g_eff = this.Ra * this.nu * this.kappa_th;
 
     this._initTemperature();
     this.time = 0;
