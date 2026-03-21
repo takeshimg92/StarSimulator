@@ -39,6 +39,7 @@ export class PatchRenderer {
     this.particles = [];
     this._trailCanvas = null;
     this._trailCtx = null;
+    this._prevPos = null; // previous pixel positions for drawing line segments
 
     // Global color range (set once from the 1D model, not per-frame)
     this._globalRange = null; // { T: {min,max}, rho: {min,max}, ... }
@@ -107,10 +108,10 @@ export class PatchRenderer {
     if (!this.sim) return;
     const { Nx, Ny } = this.sim;
     this.particles = [];
+    this._prevPos = new Float64Array(PARTICLE_COUNT * 2).fill(-1); // px, py pairs
     for (let p = 0; p < PARTICLE_COUNT; p++) {
       this.particles.push(this._spawnParticle());
     }
-    // Create trail canvas for fading effect
     this._trailCanvas = document.createElement('canvas');
     this._trailCanvas.width = this.size;
     this._trailCanvas.height = this.size;
@@ -358,7 +359,8 @@ export class PatchRenderer {
     // regardless of Ra. Without this, high-Ra flows fling particles out of bounds.
     const advectScale = maxV > 0.01 ? 0.3 / maxV : 0;
 
-    for (const p of particles) {
+    for (let pidx = 0; pidx < particles.length; pidx++) {
+      const p = particles[pidx];
       // Sample velocity at particle position (bilinear)
       const i0 = Math.max(0, Math.min(Math.floor(p.ci), Nx - 2));
       const j0 = Math.max(0, Math.min(Math.floor(p.cj), Ny - 2));
@@ -387,6 +389,8 @@ export class PatchRenderer {
         p.ci = fresh.ci;
         p.cj = fresh.cj;
         p.age = 0;
+        this._prevPos[pidx * 2] = -1; // clear trail on respawn
+        this._prevPos[pidx * 2 + 1] = -1;
         continue;
       }
 
@@ -394,10 +398,26 @@ export class PatchRenderer {
       const px = (p.ci / Nx) * this.size;
       const py = (1 - p.cj / Ny) * this.size;
 
-      tctx.fillStyle = 'rgba(220, 220, 220, 0.7)';
-      tctx.beginPath();
-      tctx.arc(px, py, PARTICLE_RADIUS * dpr, 0, Math.PI * 2);
-      tctx.fill();
+      // Draw line segment from previous position to current
+      const prevPx = this._prevPos[pidx * 2];
+      const prevPy = this._prevPos[pidx * 2 + 1];
+
+      if (prevPx >= 0 && prevPy >= 0) {
+        // Only draw if the segment isn't too long (skip respawn jumps)
+        const segLen = Math.sqrt((px - prevPx) ** 2 + (py - prevPy) ** 2);
+        if (segLen < this.size * 0.15) {
+          tctx.strokeStyle = 'rgba(220, 220, 220, 0.7)';
+          tctx.lineWidth = PARTICLE_RADIUS * dpr * 2;
+          tctx.lineCap = 'round';
+          tctx.beginPath();
+          tctx.moveTo(prevPx, prevPy);
+          tctx.lineTo(px, py);
+          tctx.stroke();
+        }
+      }
+
+      this._prevPos[pidx * 2] = px;
+      this._prevPos[pidx * 2 + 1] = py;
     }
 
     // Composite trail canvas onto main canvas
