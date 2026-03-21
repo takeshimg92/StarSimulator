@@ -370,9 +370,13 @@ export class PatchRenderer {
                  fx * ((1 - fy) * sim.get(sim.vy, i0 + 1, j0) + fy * sim.get(sim.vy, i0 + 1, j0 + 1));
 
       // Advect particle
+      const speed = Math.sqrt(vx * vx + vy * vy);
       p.ci += vx * advectScale / sim.dx;
       p.cj += vy * advectScale / sim.dy;
-      p.age++;
+
+      // Only age particles that are actually moving — prevents premature
+      // respawn while convection is still developing from initial conditions
+      if (speed > maxV * 0.01) p.age++;
 
       // Respawn if out of bounds or too old
       if (p.ci < 0 || p.ci > Nx - 1 || p.cj < 1 || p.cj > Ny - 1 || p.age > PARTICLE_MAX_AGE) {

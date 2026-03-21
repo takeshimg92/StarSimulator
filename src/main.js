@@ -685,7 +685,8 @@ async function rebuildPatchSim() {
   });
 
   // Develop convection cells — fewer steps for faster loading
-  patchSim.fastForward(120, 0.002);
+  // Use larger dt for fast-forward (accuracy matters less than coverage)
+  patchSim.fastForward(60, 0.008);
 
   patchRenderer.setSim(patchSim);
   patchRenderer.setDepthInfo({
