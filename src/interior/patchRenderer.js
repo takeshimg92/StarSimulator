@@ -319,12 +319,22 @@ export class PatchRenderer {
       });
     }
 
+    // Minimum speed threshold: skip streamlines in nearly-still regions
+    const speedThreshold = maxV * 0.05;
+
     for (const seed of seeds) {
+      // Check if seed location has meaningful flow before tracing
+      const si = Math.max(0, Math.min(Math.round(seed.i), Nx - 1));
+      const sj = Math.max(0, Math.min(Math.round(seed.j), Ny - 1));
+      const seedSpeed = Math.sqrt(
+        sim.get(sim.vx, si, sj) ** 2 + sim.get(sim.vy, si, sj) ** 2
+      );
+      if (seedSpeed < speedThreshold) continue;
+
       const points = [];
       let ci = seed.i, cj = seed.j;
 
       for (let step = 0; step < STREAMLINE_STEPS; step++) {
-        // Sample velocity at (ci, cj) with bilinear interp
         const i0 = Math.floor(ci);
         const j0 = Math.floor(cj);
         const fx = ci - i0;
@@ -336,7 +346,7 @@ export class PatchRenderer {
                    fx * ((1 - fy) * sim.get(sim.vy, i0 + 1, j0) + fy * sim.get(sim.vy, i0 + 1, j0 + 1));
 
         const speed = Math.sqrt(vx * vx + vy * vy);
-        if (speed < 1e-12) break;
+        if (speed < speedThreshold) break;
 
         // Map to pixel coordinates (flip y)
         const px = (ci / Nx) * size;
