@@ -347,9 +347,12 @@ export class PatchRenderer {
     }
     const tctx = this._trailCtx;
 
-    // Faster fade so trails don't accumulate and darken the background
-    tctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
+    // Fade trails by clearing with slight transparency
+    // (globalCompositeOperation trick: draw semi-transparent black to dim old trails)
+    tctx.globalCompositeOperation = 'destination-out';
+    tctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
     tctx.fillRect(0, 0, this.size, this.size);
+    tctx.globalCompositeOperation = 'source-over';
 
     const dpr = this.dpr;
     const advectScale = 0.3; // velocity → grid displacement scaling
@@ -392,10 +395,8 @@ export class PatchRenderer {
 
     // Composite trail canvas onto main canvas
     const { ctx } = this;
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // pixel space for drawImage
-    ctx.globalAlpha = 0.8;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(this._trailCanvas, 0, 0);
-    ctx.globalAlpha = 1.0;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // restore CSS space
   }
 
