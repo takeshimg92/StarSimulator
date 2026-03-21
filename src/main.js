@@ -634,21 +634,30 @@ function computeLocalPatchParams(model, rFrac) {
   // Superadiabatic ratio: how far above (or below) the convective threshold
   const ratio = nabla_rad / NABLA_AD;
 
-  // Map to effective Ra for the Boussinesq sim:
-  //   ratio = 0.0 → Ra_eff ≈ 0 (deep radiative, completely stable)
-  //   ratio = 0.5 → Ra_eff ≈ 800 (weakly stable, slow diffusive decay visible)
-  //   ratio = 1.0 → Ra_eff ≈ 1700 (neutral — near critical)
-  //   ratio = 2.0 → Ra_eff ≈ 20000 (moderately convective)
-  //   ratio = 10+ → Ra_eff ≈ 100000 (vigorous convection)
+  // Map to effective Ra for the Boussinesq sim.
+  //
+  // Above the Schwarzschild boundary, convective velocity scales as
+  //   v_conv ∝ √(∇_rad - ∇_ad)   (mixing-length theory)
+  // Since kinetic energy ~ v² ~ Ra (in the sim), Ra should scale as
+  //   Ra_eff ∝ (∇_rad - ∇_ad)  →  ∝ (ratio - 1)
+  // but we use a square-root ramp near the boundary for a gradual
+  // onset, transitioning to linear growth further in:
+  //
+  //   ratio = 0.0 → Ra_eff ≈ 0
+  //   ratio = 1.0 → Ra_eff = 1700 (critical)
+  //   ratio = 1.1 → Ra_eff ≈ 3400 (gentle onset, √ scaling)
+  //   ratio = 2.0 → Ra_eff ≈ 7400
+  //   ratio = 10  → Ra_eff ≈ 18700
+  //   ratio = 100 → Ra_eff ≈ 53000
   let Ra_eff;
   if (ratio <= 1) {
-    // Subcritical: linear ramp from 0 to ~1700
     Ra_eff = ratio * 1700;
   } else {
-    // Supercritical: rapid increase with superadiabatic excess
-    Ra_eff = 1700 + (ratio - 1) * 15000;
+    // √(ratio - 1) gives gradual onset matching MLT velocity scaling.
+    // Scale so Ra reaches ~100k at ratio ~1000 (deep convective zone).
+    Ra_eff = 1700 + 5000 * Math.sqrt(ratio - 1);
   }
-  Ra_eff = Math.min(Ra_eff, 1e5); // cap for numerical stability
+  Ra_eff = Math.min(Ra_eff, 1e5);
 
   return {
     Ra_eff,
