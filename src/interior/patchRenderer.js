@@ -47,13 +47,21 @@ export class PatchRenderer {
 
   _updateSize() {
     const rect = this.canvas.getBoundingClientRect();
-    // Use the CSS width (constrained by the panel), or fallback to 400
-    const cssW = rect.width > 10 ? rect.width : 400;
+    if (rect.width < 10) return; // hidden panel, skip
+    const cssW = rect.width;
+    const newSize = Math.round(cssW * this.dpr);
+    if (newSize === this.size) return; // no change
     this.cssSize = cssW;
-    this.size = Math.round(cssW * this.dpr);
-    this.canvas.width = this.size;
-    this.canvas.height = this.size;
+    this.size = newSize;
+    this.canvas.width = newSize;
+    this.canvas.height = newSize;
     this.ctx = this.canvas.getContext('2d');
+    // Also resize trail canvas
+    if (this._trailCanvas) {
+      this._trailCanvas.width = newSize;
+      this._trailCanvas.height = newSize;
+      this._trailCtx = this._trailCanvas.getContext('2d');
+    }
   }
 
   setModel(model) {

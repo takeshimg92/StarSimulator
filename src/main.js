@@ -727,23 +727,25 @@ function computeLocalPatchParams(model, rFrac) {
 let _rebuildPending = false;
 
 async function rebuildPatchSim() {
-  if (!interiorModel || !patchRenderer) return;
+  if (!interiorModel) return;
+  if (!patchRenderer && !patchRendererMobile) return;
 
   const info = computeLocalPatchParams(interiorModel, currentDepthFrac);
+  const depthInfo = {
+    rFrac: currentDepthFrac,
+    H_P_km: info.H_P_km,
+    boxSize_km: info.boxSize_km,
+    T: info.T_local,
+    rho: info.rho_local,
+    isConvective: info.isConvective,
+    Ra: info.Ra_eff,
+  };
 
   if (patchSim) {
     // Sim already exists — just update Ra and let the flow evolve smoothly.
-    // No reinitialization, no loading screen, no disruption.
     patchSim.setRa(info.Ra_eff);
-    patchRenderer.setDepthInfo({
-      rFrac: currentDepthFrac,
-      H_P_km: info.H_P_km,
-      boxSize_km: info.boxSize_km,
-      T: info.T_local,
-      rho: info.rho_local,
-      isConvective: info.isConvective,
-      Ra: info.Ra_eff,
-    });
+    if (patchRenderer) patchRenderer.setDepthInfo(depthInfo);
+    if (patchRendererMobile) patchRendererMobile.setDepthInfo(depthInfo);
     return;
   }
 
@@ -764,15 +766,6 @@ async function rebuildPatchSim() {
 
   patchSim.fastForward(60, 0.008);
 
-  const depthInfo = {
-    rFrac: currentDepthFrac,
-    H_P_km: info.H_P_km,
-    boxSize_km: info.boxSize_km,
-    T: info.T_local,
-    rho: info.rho_local,
-    isConvective: info.isConvective,
-    Ra: info.Ra_eff,
-  };
   patchRenderer.setSim(patchSim);
   patchRenderer.setDepthInfo(depthInfo);
   if (patchRendererMobile) {
