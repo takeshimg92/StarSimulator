@@ -679,13 +679,13 @@ async function rebuildPatchSim() {
   const info = computeLocalPatchParams(interiorModel, currentDepthFrac);
 
   patchSim = new CartesianSim({
-    Nx: 128, Ny: 128,
+    Nx: 80, Ny: 80,
     Ra: info.Ra_eff,
     Pr: 0.7,
   });
 
-  // Develop convection cells before first visible render
-  patchSim.fastForward(150, 0.01);
+  // Develop convection cells — fewer steps for faster loading
+  patchSim.fastForward(80, 0.015);
 
   patchRenderer.setSim(patchSim);
   patchRenderer.setDepthInfo({

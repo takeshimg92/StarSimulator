@@ -190,7 +190,7 @@ export class CartesianSim {
     this.time += dt;
   }
 
-  _diffuse(field, field0, diff, dt, iterations = 30) {
+  _diffuse(field, field0, diff, dt, iterations = 15) {
     const { Nx, Ny, dx, dy } = this;
     const ax = diff * dt / (dx * dx);
     const ay = diff * dt / (dy * dy);
@@ -241,7 +241,7 @@ export class CartesianSim {
     }
   }
 
-  _project(iterations = 40) {
+  _project(iterations = 20) {
     const { Nx, Ny, dx, dy, vx, vy, p, div } = this;
 
     // Divergence

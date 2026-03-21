@@ -303,13 +303,19 @@ export class PatchRenderer {
 
     const { Nx, Ny } = sim;
 
-    // Seed points scattered across the domain (avoid fixed rows)
+    // Seed points using Halton sequence (low-discrepancy, no clustering)
     const seeds = [];
     const total = STREAMLINE_SEEDS * 2;
     for (let s = 0; s < total; s++) {
+      // Halton(base=2) for x, Halton(base=3) for y
+      let hx = 0, hy = 0;
+      let f2 = 0.5, f3 = 1 / 3;
+      let n2 = s + 1, n3 = s + 1;
+      while (n2 > 0) { hx += (n2 % 2) * f2; n2 = Math.floor(n2 / 2); f2 /= 2; }
+      while (n3 > 0) { hy += (n3 % 3) * f3; n3 = Math.floor(n3 / 3); f3 /= 3; }
       seeds.push({
-        i: (s * 7.13 + 3.7) % Nx,  // quasi-random spread via irrational offset
-        j: 2 + ((s * 11.17 + 1.3) % (Ny - 4)),
+        i: hx * Nx,
+        j: 2 + hy * (Ny - 4),
       });
     }
 
@@ -455,14 +461,15 @@ export class PatchRenderer {
 
   _drawLabels() {
     const { ctx, cssSize: size, depthInfo } = this;
+    const info = FIELD_INFO[this.activeField] || {};
 
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     ctx.font = '10px Inter, sans-serif';
 
-    // Top-left: depth info
+    // Top-left: position info
     ctx.textAlign = 'left';
     if (depthInfo) {
-      ctx.fillText(`Depth: r/R = ${depthInfo.rFrac.toFixed(2)}`, 8, 16);
+      ctx.fillText(`r/R = ${depthInfo.rFrac.toFixed(2)}`, 8, 16);
       ctx.fillText(`H_P = ${(depthInfo.H_P_km).toFixed(0)} km`, 8, 28);
       ctx.fillText(`Box: ${depthInfo.boxSize_km.toFixed(0)} km`, 8, 40);
     }
@@ -480,5 +487,67 @@ export class PatchRenderer {
       ctx.textAlign = 'right';
       ctx.fillText(`Ra = ${this.sim.Ra.toExponential(1)}`, size - 8, size - 6);
     }
+
+    // --- Colorbar ---
+    this._drawColorbar(size, info);
+  }
+
+  _drawColorbar(size, info) {
+    const { ctx } = this;
+    const cmap = getColormap(this.activeField);
+
+    const barX = 8;
+    const barY = size - 60;
+    const barW = 10;
+    const barH = 45;
+
+    // Draw gradient
+    for (let py = 0; py < barH; py++) {
+      const t = 1 - py / barH; // top of bar = max
+      const [r, g, b] = cmap(t);
+      ctx.fillStyle = `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+      ctx.fillRect(barX, barY + py, barW, 1);
+    }
+
+    // Border
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(barX, barY, barW, barH);
+
+    // Compute physical value range at this depth
+    let valMax = '', valMin = '';
+    if (this.depthInfo && this.model) {
+      const gr = this._globalRange && this._globalRange[this.activeField];
+      if (gr) {
+        if (this.activeField === 'velocity') {
+          valMax = this._fmtVal(gr.max) + ' ' + (info.unit || '');
+          valMin = '0 ' + (info.unit || '');
+        } else {
+          // Log scale: show 10^max and 10^min
+          valMax = this._fmtVal(Math.pow(10, gr.max)) + ' ' + (info.unit || '');
+          valMin = this._fmtVal(Math.pow(10, gr.min)) + ' ' + (info.unit || '');
+        }
+      }
+    }
+
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(valMax, barX + barW + 3, barY + 7);
+    ctx.fillText(valMin, barX + barW + 3, barY + barH);
+
+    // Field name + unit
+    ctx.font = '9px Inter, sans-serif';
+    ctx.fillText(info.name || this.activeField, barX + barW + 3, barY - 4);
+  }
+
+  _fmtVal(v) {
+    if (!isFinite(v)) return '—';
+    if (Math.abs(v) >= 1e9) return v.toExponential(1);
+    if (Math.abs(v) >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+    if (Math.abs(v) >= 1e3) return (v / 1e3).toFixed(1) + 'k';
+    if (Math.abs(v) >= 1) return v.toFixed(1);
+    if (Math.abs(v) >= 0.01) return v.toFixed(3);
+    return v.toExponential(1);
   }
 }

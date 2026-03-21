@@ -2,24 +2,11 @@
  * Colormap functions for interior heatmap visualization.
  *
  * Each colormap maps a normalized value t ∈ [0, 1] to [r, g, b] ∈ [0, 255].
- * Designed for dark backgrounds.
+ * Based on standard scientific colormaps (inferno, viridis, plasma, cividis).
  */
 
 /**
- * Linear interpolation between two colors.
- */
-function lerp(a, b, t) {
-  return [
-    a[0] + (b[0] - a[0]) * t,
-    a[1] + (b[1] - a[1]) * t,
-    a[2] + (b[2] - a[2]) * t,
-  ];
-}
-
-/**
- * Multi-stop color ramp.
- * @param {number} t - value in [0, 1]
- * @param {Array<[number, number[]]>} stops - array of [position, [r,g,b]]
+ * Multi-stop color ramp with linear interpolation.
  */
 function ramp(t, stops) {
   t = Math.max(0, Math.min(1, t));
@@ -27,85 +14,106 @@ function ramp(t, stops) {
     const [t0, c0] = stops[i];
     const [t1, c1] = stops[i + 1];
     if (t <= t1) {
-      const frac = (t - t0) / (t1 - t0);
-      return lerp(c0, c1, frac);
+      const f = (t - t0) / (t1 - t0);
+      return [
+        c0[0] + (c1[0] - c0[0]) * f,
+        c0[1] + (c1[1] - c0[1]) * f,
+        c0[2] + (c1[2] - c0[2]) * f,
+      ];
     }
   }
   return stops[stops.length - 1][1];
 }
 
 /**
- * Temperature colormap: black → dark red → red → orange → yellow → white.
- * Mimics "hot" / "inferno" style.
+ * Temperature: inferno (black → purple → red → orange → yellow → white).
+ * Perceptually uniform, widely used for thermal data.
  */
 export function colormapTemperature(t) {
   return ramp(t, [
-    [0.0, [0, 0, 0]],
-    [0.2, [80, 0, 0]],
-    [0.4, [180, 20, 0]],
-    [0.6, [230, 120, 0]],
-    [0.8, [255, 220, 50]],
-    [1.0, [255, 255, 220]],
+    [0.00, [0, 0, 4]],
+    [0.13, [28, 16, 68]],
+    [0.25, [79, 18, 123]],
+    [0.38, [136, 34, 106]],
+    [0.50, [186, 54, 85]],
+    [0.63, [227, 89, 51]],
+    [0.75, [249, 140, 10]],
+    [0.88, [249, 201, 50]],
+    [1.00, [252, 255, 164]],
   ]);
 }
 
 /**
- * Density colormap: dark blue → blue → cyan → white.
+ * Density: viridis (dark purple → teal → green → yellow).
+ * Perceptually uniform, good for continuous data.
  */
 export function colormapDensity(t) {
   return ramp(t, [
-    [0.0, [0, 0, 10]],
-    [0.25, [0, 20, 80]],
-    [0.5, [0, 80, 180]],
-    [0.75, [50, 200, 240]],
-    [1.0, [220, 250, 255]],
+    [0.00, [68, 1, 84]],
+    [0.13, [72, 27, 109]],
+    [0.25, [62, 74, 137]],
+    [0.38, [49, 104, 142]],
+    [0.50, [38, 130, 142]],
+    [0.63, [31, 158, 137]],
+    [0.75, [53, 183, 121]],
+    [0.88, [110, 206, 88]],
+    [1.00, [253, 231, 37]],
   ]);
 }
 
 /**
- * Pressure colormap: dark purple → magenta → pink → white.
+ * Pressure: plasma (dark purple → magenta → orange → yellow).
+ * Perceptually uniform, high contrast.
  */
 export function colormapPressure(t) {
   return ramp(t, [
-    [0.0, [5, 0, 15]],
-    [0.25, [50, 0, 80]],
-    [0.5, [150, 20, 150]],
-    [0.75, [220, 100, 200]],
-    [1.0, [255, 230, 255]],
+    [0.00, [13, 8, 135]],
+    [0.13, [75, 3, 161]],
+    [0.25, [126, 3, 168]],
+    [0.38, [168, 34, 150]],
+    [0.50, [203, 70, 121]],
+    [0.63, [229, 107, 93]],
+    [0.75, [248, 148, 65]],
+    [0.88, [253, 195, 40]],
+    [1.00, [240, 249, 33]],
   ]);
 }
 
 /**
- * Energy generation colormap: black → dark green → green → yellow.
- * Designed to highlight the concentrated core emission.
+ * Energy generation: hot (black → red → yellow → white).
+ * Good for emission-like data concentrated in the core.
  */
 export function colormapEnergy(t) {
   return ramp(t, [
-    [0.0, [0, 0, 0]],
-    [0.15, [0, 30, 0]],
-    [0.4, [0, 130, 20]],
-    [0.7, [100, 210, 30]],
-    [1.0, [255, 255, 80]],
+    [0.00, [0, 0, 0]],
+    [0.20, [80, 0, 0]],
+    [0.40, [180, 20, 0]],
+    [0.60, [230, 120, 0]],
+    [0.80, [255, 220, 50]],
+    [1.00, [255, 255, 220]],
   ]);
 }
 
 /**
- * Velocity colormap: black (radiative) → blue → cyan → white (convective).
+ * Velocity: cividis (dark blue → teal → yellow).
+ * Perceptually uniform, colorblind-friendly.
  */
 export function colormapVelocity(t) {
   return ramp(t, [
-    [0.0, [0, 0, 5]],
-    [0.2, [0, 10, 50]],
-    [0.5, [20, 80, 200]],
-    [0.8, [80, 210, 255]],
-    [1.0, [230, 255, 255]],
+    [0.00, [0, 32, 77]],
+    [0.13, [0, 50, 100]],
+    [0.25, [46, 71, 105]],
+    [0.38, [78, 91, 105]],
+    [0.50, [109, 112, 108]],
+    [0.63, [142, 132, 100]],
+    [0.75, [177, 155, 78]],
+    [0.88, [216, 183, 47]],
+    [1.00, [253, 231, 37]],
   ]);
 }
 
 /**
  * Get colormap function by field name.
- * @param {string} field - one of 'temperature', 'density', 'pressure', 'energy', 'velocity'
- * @returns {function(number): number[]}
  */
 export function getColormap(field) {
   switch (field) {
@@ -124,5 +132,5 @@ export const FIELD_INFO = {
   density: { label: 'ρ', unit: 'kg/m³', name: 'Density' },
   pressure: { label: 'P', unit: 'Pa', name: 'Pressure' },
   energy: { label: 'ε', unit: 'W/kg', name: 'Energy Generation' },
-  velocity: { label: 'v', unit: 'm/s', name: 'Convective Velocity' },
+  velocity: { label: 'v', unit: 'm/s', name: 'Velocity' },
 };
