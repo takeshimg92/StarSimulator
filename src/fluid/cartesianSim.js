@@ -142,6 +142,18 @@ export class CartesianSim {
     this.vy.fill(0);
   }
 
+  /**
+   * Update Ra (and derived coefficients) without resetting the flow state.
+   * The existing velocity and temperature fields continue evolving under
+   * the new forcing — giving a smooth visual transition.
+   */
+  setRa(Ra) {
+    this.Ra = Ra;
+    this.kappa_th = 0.04;
+    this.nu = this.kappa_th * this.Pr;
+    this.g_eff = this.Ra * this.nu * this.kappa_th;
+  }
+
   reset(opts = {}) {
     if (opts.Ra !== undefined) this.Ra = opts.Ra;
     if (opts.Pr !== undefined) this.Pr = opts.Pr;

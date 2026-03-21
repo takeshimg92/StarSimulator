@@ -677,16 +677,33 @@ let _rebuildPending = false;
 
 async function rebuildPatchSim() {
   if (!interiorModel || !patchRenderer) return;
-  if (_rebuildPending) return; // debounce
+
+  const info = computeLocalPatchParams(interiorModel, currentDepthFrac);
+
+  if (patchSim) {
+    // Sim already exists — just update Ra and let the flow evolve smoothly.
+    // No reinitialization, no loading screen, no disruption.
+    patchSim.setRa(info.Ra_eff);
+    patchRenderer.setDepthInfo({
+      rFrac: currentDepthFrac,
+      H_P_km: info.H_P_km,
+      boxSize_km: info.boxSize_km,
+      T: info.T_local,
+      rho: info.rho_local,
+      isConvective: info.isConvective,
+      Ra: info.Ra_eff,
+    });
+    return;
+  }
+
+  // First creation — full init with loading indicator
+  if (_rebuildPending) return;
   _rebuildPending = true;
 
   const loadingEl = document.getElementById('interior-loading');
   if (loadingEl) loadingEl.style.display = '';
 
-  // Yield to browser so loading indicator renders before blocking
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-  const info = computeLocalPatchParams(interiorModel, currentDepthFrac);
 
   patchSim = new CartesianSim({
     Nx: 80, Ny: 80,
@@ -694,8 +711,6 @@ async function rebuildPatchSim() {
     Pr: 0.7,
   });
 
-  // Develop convection cells — fewer steps for faster loading
-  // Use larger dt for fast-forward (accuracy matters less than coverage)
   patchSim.fastForward(60, 0.008);
 
   patchRenderer.setSim(patchSim);
@@ -813,6 +828,7 @@ function updateInterior(mass) {
     });
 
     patchRenderer.setModel(interiorModel);
+    patchSim = null; // force full rebuild for new star
     rebuildPatchSim();
   }
 
