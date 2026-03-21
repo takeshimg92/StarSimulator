@@ -355,7 +355,9 @@ export class PatchRenderer {
     tctx.globalCompositeOperation = 'source-over';
 
     const dpr = this.dpr;
-    const advectScale = 0.3; // velocity → grid displacement scaling
+    // Normalize advection so particles move ~0.3 grid cells/frame at max velocity,
+    // regardless of Ra. Without this, high-Ra flows fling particles out of bounds.
+    const advectScale = maxV > 0.01 ? 0.3 / maxV : 0;
 
     for (const p of particles) {
       // Sample velocity at particle position (bilinear)
