@@ -10,9 +10,9 @@
 
 import { getColormap, FIELD_INFO } from './colormaps.js';
 
-const STREAMLINE_SEEDS = 30;
-const STREAMLINE_STEPS = 80;
-const STREAMLINE_DT = 0.008;
+const PARTICLE_COUNT = 300;
+const PARTICLE_MAX_AGE = 200; // frames before respawn
+const PARTICLE_RADIUS = 1.8;
 
 export class PatchRenderer {
   /**
@@ -34,6 +34,11 @@ export class PatchRenderer {
     this.activeField = 'temperature';
     this.model = null;
     this.showStreamlines = true;
+
+    // Material tracer particles
+    this.particles = [];
+    this._trailCanvas = null;
+    this._trailCtx = null;
 
     // Global color range (set once from the 1D model, not per-frame)
     this._globalRange = null; // { T: {min,max}, rho: {min,max}, ... }
@@ -95,6 +100,31 @@ export class PatchRenderer {
 
   setSim(sim) {
     this.sim = sim;
+    this._initParticles();
+  }
+
+  _initParticles() {
+    if (!this.sim) return;
+    const { Nx, Ny } = this.sim;
+    this.particles = [];
+    for (let p = 0; p < PARTICLE_COUNT; p++) {
+      this.particles.push(this._spawnParticle());
+    }
+    // Create trail canvas for fading effect
+    this._trailCanvas = document.createElement('canvas');
+    this._trailCanvas.width = this.size;
+    this._trailCanvas.height = this.size;
+    this._trailCtx = this._trailCanvas.getContext('2d');
+    this._trailCtx.clearRect(0, 0, this.size, this.size);
+  }
+
+  _spawnParticle() {
+    const { Nx, Ny } = this.sim;
+    return {
+      ci: Math.random() * (Nx - 1),      // grid x
+      cj: 1 + Math.random() * (Ny - 2),  // grid y (avoid boundaries)
+      age: Math.floor(Math.random() * PARTICLE_MAX_AGE), // stagger ages
+    };
   }
 
   setDepthInfo(info) {
@@ -295,124 +325,92 @@ export class PatchRenderer {
     return { field: null, values: vals, is2D: false };
   }
 
+  /**
+   * Advect and draw material tracer particles.
+   * Each particle drifts with the local velocity, colored by temperature.
+   * Fading trails show the flow history.
+   */
   _drawStreamlines() {
-    const { ctx, cssSize: size, sim } = this;
-    if (!sim) return;
-    const maxV = sim.maxVelocity();
-    if (maxV < 1e-10) return;
+    const { sim, cssSize: size, particles } = this;
+    if (!sim || !particles.length) return;
 
     const { Nx, Ny } = sim;
+    const maxV = sim.maxVelocity();
+    if (maxV < 1e-12) return;
 
-    // Seed points using Halton sequence (low-discrepancy, no clustering)
-    const seeds = [];
-    const total = STREAMLINE_SEEDS * 2;
-    for (let s = 0; s < total; s++) {
-      // Halton(base=2) for x, Halton(base=3) for y
-      let hx = 0, hy = 0;
-      let f2 = 0.5, f3 = 1 / 3;
-      let n2 = s + 1, n3 = s + 1;
-      while (n2 > 0) { hx += (n2 % 2) * f2; n2 = Math.floor(n2 / 2); f2 /= 2; }
-      while (n3 > 0) { hy += (n3 % 3) * f3; n3 = Math.floor(n3 / 3); f3 /= 3; }
-      seeds.push({
-        i: hx * Nx,
-        j: 2 + hy * (Ny - 4),
-      });
+    // Ensure trail canvas matches current size
+    if (!this._trailCanvas || this._trailCanvas.width !== this.size) {
+      this._trailCanvas = document.createElement('canvas');
+      this._trailCanvas.width = this.size;
+      this._trailCanvas.height = this.size;
+      this._trailCtx = this._trailCanvas.getContext('2d');
     }
+    const tctx = this._trailCtx;
 
-    // Minimum speed threshold: skip streamlines in nearly-still regions
-    const speedThreshold = maxV * 0.05;
+    // Fade the trail canvas (creates the fading tail effect)
+    tctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
+    tctx.fillRect(0, 0, this.size, this.size);
 
-    for (const seed of seeds) {
-      // Check if seed location has meaningful flow before tracing
-      const si = Math.max(0, Math.min(Math.round(seed.i), Nx - 1));
-      const sj = Math.max(0, Math.min(Math.round(seed.j), Ny - 1));
-      const seedSpeed = Math.sqrt(
-        sim.get(sim.vx, si, sj) ** 2 + sim.get(sim.vy, si, sj) ** 2
-      );
-      if (seedSpeed < speedThreshold) continue;
+    const dpr = this.dpr;
+    const advectScale = 0.3; // velocity → grid displacement scaling
 
-      const points = [];
-      let ci = seed.i, cj = seed.j;
+    for (const p of particles) {
+      // Sample velocity at particle position (bilinear)
+      const i0 = Math.max(0, Math.min(Math.floor(p.ci), Nx - 2));
+      const j0 = Math.max(0, Math.min(Math.floor(p.cj), Ny - 2));
+      const fx = p.ci - i0;
+      const fy = p.cj - j0;
 
-      for (let step = 0; step < STREAMLINE_STEPS; step++) {
-        const i0 = Math.floor(ci);
-        const j0 = Math.floor(cj);
-        const fx = ci - i0;
-        const fy = cj - j0;
+      const vx = (1 - fx) * ((1 - fy) * sim.get(sim.vx, i0, j0) + fy * sim.get(sim.vx, i0, j0 + 1)) +
+                 fx * ((1 - fy) * sim.get(sim.vx, i0 + 1, j0) + fy * sim.get(sim.vx, i0 + 1, j0 + 1));
+      const vy = (1 - fx) * ((1 - fy) * sim.get(sim.vy, i0, j0) + fy * sim.get(sim.vy, i0, j0 + 1)) +
+                 fx * ((1 - fy) * sim.get(sim.vy, i0 + 1, j0) + fy * sim.get(sim.vy, i0 + 1, j0 + 1));
 
-        const vx = (1 - fx) * ((1 - fy) * sim.get(sim.vx, i0, j0) + fy * sim.get(sim.vx, i0, j0 + 1)) +
-                   fx * ((1 - fy) * sim.get(sim.vx, i0 + 1, j0) + fy * sim.get(sim.vx, i0 + 1, j0 + 1));
-        const vy = (1 - fx) * ((1 - fy) * sim.get(sim.vy, i0, j0) + fy * sim.get(sim.vy, i0, j0 + 1)) +
-                   fx * ((1 - fy) * sim.get(sim.vy, i0 + 1, j0) + fy * sim.get(sim.vy, i0 + 1, j0 + 1));
+      // Advect particle
+      p.ci += vx * advectScale / sim.dx;
+      p.cj += vy * advectScale / sim.dy;
+      p.age++;
 
-        const speed = Math.sqrt(vx * vx + vy * vy);
-        if (speed < speedThreshold) break;
-
-        // Map to pixel coordinates (flip y)
-        const px = (ci / Nx) * size;
-        const py = (1 - cj / Ny) * size;
-        points.push({ px, py, vy });
-
-        // RK2 integration in grid-index space
-        const dt = STREAMLINE_DT;
-        const ci_mid = ci + 0.5 * dt * vx / sim.dx;
-        const cj_mid = cj + 0.5 * dt * vy / sim.dy;
-        const vx2 = this._sampleV(sim.vx, ci_mid, cj_mid);
-        const vy2 = this._sampleV(sim.vy, ci_mid, cj_mid);
-
-        ci += dt * vx2 / sim.dx;
-        cj += dt * vy2 / sim.dy;
-
-        // Stop if out of bounds (don't wrap — wrapping creates horizontal lines)
-        if (cj < 0.5 || cj > Ny - 1.5 || ci < 0 || ci > Nx - 1) break;
+      // Respawn if out of bounds or too old
+      if (p.ci < 0 || p.ci > Nx - 1 || p.cj < 1 || p.cj > Ny - 1 || p.age > PARTICLE_MAX_AGE) {
+        const fresh = this._spawnParticle();
+        p.ci = fresh.ci;
+        p.cj = fresh.cj;
+        p.age = 0;
+        continue;
       }
 
-      if (points.length < 3) continue;
+      // Pixel position (in actual canvas pixels for trail drawing)
+      const px = (p.ci / Nx) * this.size;
+      const py = (1 - p.cj / Ny) * this.size;
 
-      // Color by average vy: positive (rising) = warm, negative (sinking) = cool
-      const avgVy = points.reduce((s, p) => s + p.vy, 0) / points.length;
-      let color;
-      if (avgVy > 0.01 * maxV) {
-        color = 'rgba(255, 200, 80, 0.5)';  // rising hot
-      } else if (avgVy < -0.01 * maxV) {
-        color = 'rgba(80, 160, 255, 0.5)';   // sinking cool
+      // Color by local vy: rising (hot) = warm, sinking (cool) = blue
+      const speed = Math.sqrt(vx * vx + vy * vy);
+      const opacity = Math.min(0.9, speed / maxV * 2);
+
+      let r, g, b;
+      if (vy > 0.02 * maxV) {
+        r = 255; g = 190; b = 60;   // rising hot
+      } else if (vy < -0.02 * maxV) {
+        r = 80; g = 150; b = 255;    // sinking cool
       } else {
-        color = 'rgba(200, 200, 200, 0.3)';
+        r = 200; g = 200; b = 200;   // neutral
       }
 
-      ctx.beginPath();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.0;
-      ctx.moveTo(points[0].px, points[0].py);
-      for (let k = 1; k < points.length; k++) {
-        ctx.lineTo(points[k].px, points[k].py);
-      }
-      ctx.stroke();
-
-      // Arrowhead
-      if (points.length >= 3) {
-        const last = points[points.length - 1];
-        const prev = points[points.length - 3];
-        const angle = Math.atan2(last.py - prev.py, last.px - prev.px);
-        ctx.beginPath();
-        ctx.fillStyle = color;
-        ctx.moveTo(last.px, last.py);
-        ctx.lineTo(last.px - 4 * Math.cos(angle - 0.4), last.py - 4 * Math.sin(angle - 0.4));
-        ctx.lineTo(last.px - 4 * Math.cos(angle + 0.4), last.py - 4 * Math.sin(angle + 0.4));
-        ctx.closePath();
-        ctx.fill();
-      }
+      // Draw dot on trail canvas (accumulates over time)
+      tctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+      tctx.beginPath();
+      tctx.arc(px, py, PARTICLE_RADIUS * dpr, 0, Math.PI * 2);
+      tctx.fill();
     }
-  }
 
-  _sampleV(field, ci, cj) {
-    const { Nx, Ny } = this.sim;
-    const i0 = Math.floor(((ci % Nx) + Nx) % Nx);
-    const j0 = Math.max(0, Math.min(Math.floor(cj), Ny - 2));
-    const fx = ci - Math.floor(ci);
-    const fy = cj - j0;
-    return (1 - fx) * ((1 - fy) * this.sim.get(field, i0, j0) + fy * this.sim.get(field, i0, j0 + 1)) +
-           fx * ((1 - fy) * this.sim.get(field, i0 + 1, j0) + fy * this.sim.get(field, i0 + 1, j0 + 1));
+    // Composite trail canvas onto main canvas
+    const { ctx } = this;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // pixel space for drawImage
+    ctx.globalAlpha = 0.8;
+    ctx.drawImage(this._trailCanvas, 0, 0);
+    ctx.globalAlpha = 1.0;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // restore CSS space
   }
 
   /**

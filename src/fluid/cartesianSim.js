@@ -322,36 +322,57 @@ export class CartesianSim {
     const { Nx, Ny } = this;
     const dT = Math.abs(this.T_bot - this.T_top) || 1;
 
-    // Poisson-like random injection: ~2.5% chance per frame → avg every ~40 frames
-    // Randomized timing avoids the "constant pump" feel
-    if (Math.random() > 0.025) return;
+    // Persistent thermal anomalies that fade in/out smoothly over time,
+    // avoiding the "flash" of instant perturbations.
+    //
+    // Maintain a small pool of active anomalies. Each has a position,
+    // sign, and lifecycle (ramp up → hold → ramp down). New ones spawn
+    // randomly to replace expired ones.
+    if (!this._anomalies) this._anomalies = [];
 
-    // Scale amplitude inversely with Ra: convective zones already have
-    // strong natural buoyancy-driven flow and need minimal external nudging.
-    // Subcritical zones need more to show any visible structure.
     const raScale = Math.min(1.0, 1500 / (this.Ra || 1500));
+    const tAmp = dT * 0.001 * raScale; // very gentle per-frame contribution
 
-    // 1 gentle blob per event — temperature only (let buoyancy drive velocity)
-    const blobR = 5 + Math.floor(Math.random() * 5); // 5-9 cells
-    const blobR2 = blobR * blobR;
-    const tAmp = dT * 0.002 * raScale; // very gentle: ~0.2% of ΔT
+    // Spawn new anomaly occasionally (~1% chance per frame)
+    if (this._anomalies.length < 3 && Math.random() < 0.01) {
+      this._anomalies.push({
+        cx: Math.random() * Nx,
+        cy: 4 + Math.random() * (Ny - 8),
+        r: 5 + Math.floor(Math.random() * 5),
+        sign: Math.random() > 0.5 ? 1 : -1,
+        life: 0,
+        maxLife: 60 + Math.floor(Math.random() * 120), // 60-180 frames
+      });
+    }
 
-    const cx = Math.random() * Nx;
-    const cy = 4 + Math.random() * (Ny - 8);
-    const sign = Math.random() > 0.5 ? 1 : -1;
+    // Apply and age each anomaly
+    for (let a = this._anomalies.length - 1; a >= 0; a--) {
+      const an = this._anomalies[a];
+      an.life++;
 
-    const iMin = Math.max(0, Math.floor(cx - blobR * 2));
-    const iMax = Math.min(Nx - 1, Math.ceil(cx + blobR * 2));
-    const jMin = Math.max(2, Math.floor(cy - blobR * 2));
-    const jMax = Math.min(Ny - 3, Math.ceil(cy + blobR * 2));
+      // Smooth envelope: ramp up then down
+      const phase = an.life / an.maxLife; // 0 → 1
+      const envelope = Math.sin(phase * Math.PI); // 0 → 1 → 0
 
-    for (let j = jMin; j <= jMax; j++) {
-      for (let i = iMin; i <= iMax; i++) {
-        const dx = i - cx;
-        const dy = j - cy;
-        const r2 = dx * dx + dy * dy;
-        const w = Math.exp(-r2 / (2 * blobR2));
-        this.T[this.idx(i, j)] += sign * tAmp * w;
+      if (phase >= 1) {
+        this._anomalies.splice(a, 1);
+        continue;
+      }
+
+      const r2max = an.r * an.r;
+      const iMin = Math.max(0, Math.floor(an.cx - an.r * 2));
+      const iMax = Math.min(Nx - 1, Math.ceil(an.cx + an.r * 2));
+      const jMin = Math.max(2, Math.floor(an.cy - an.r * 2));
+      const jMax = Math.min(Ny - 3, Math.ceil(an.cy + an.r * 2));
+
+      for (let j = jMin; j <= jMax; j++) {
+        for (let i = iMin; i <= iMax; i++) {
+          const dx = i - an.cx;
+          const dy = j - an.cy;
+          const r2 = dx * dx + dy * dy;
+          const w = Math.exp(-r2 / (2 * r2max));
+          this.T[this.idx(i, j)] += an.sign * tAmp * envelope * w;
+        }
       }
     }
   }
