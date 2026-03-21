@@ -185,7 +185,7 @@ export class PatchRenderer {
     // The base color maps to this LOCAL range within the global colormap,
     // so the radial gradient (hotter at bottom, cooler at top) is visible
     // but doesn't span the entire star's range.
-    let localTmin = 0, localTmax = 1; // colormap t positions for bottom/top
+    let localTmin = 0, localTmax = 1;
     if (fieldData.is2D && this.depthInfo && this.model && gr) {
       const m = this.model;
       const rCenter = this.depthInfo.rFrac;
@@ -216,7 +216,11 @@ export class PatchRenderer {
       }
     }
 
-    // Subtle fluctuation gain — perturbations modulate brightness gently
+    // Store for text color decisions
+    this._localTmin = localTmin;
+    this._localTmax = localTmax;
+
+    // Subtle fluctuation gain
     const FLUCT_GAIN = 12;
 
     for (let py = 0; py < pixelSize; py++) {
@@ -508,11 +512,42 @@ export class PatchRenderer {
     ctx.fill();
   }
 
+  /**
+   * Determine whether text should be dark or light based on the
+   * average background brightness at the current depth.
+   */
+  _getTextColors() {
+    // Sample the colormap at the midpoint of the local range
+    const tMid = ((this._localTmin || 0) + (this._localTmax || 1)) / 2;
+    const cmap = getColormap(this.activeField);
+    const [r, g, b] = cmap(Math.max(0, Math.min(1, tMid)));
+    // Perceived brightness (ITU-R BT.601)
+    const brightness = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+    if (brightness > 0.55) {
+      // Bright background → dark text
+      return {
+        main: 'rgba(0, 0, 0, 0.7)',
+        dim: 'rgba(0, 0, 0, 0.4)',
+        warm: 'rgba(120, 50, 0, 0.7)',
+        cool: 'rgba(0, 40, 120, 0.7)',
+      };
+    }
+    // Dark background → light text
+    return {
+      main: 'rgba(255, 255, 255, 0.7)',
+      dim: 'rgba(255, 255, 255, 0.4)',
+      warm: 'rgba(255, 150, 50, 0.6)',
+      cool: 'rgba(80, 160, 255, 0.6)',
+    };
+  }
+
   _drawLabels() {
     const { ctx, cssSize: size, depthInfo } = this;
     const info = FIELD_INFO[this.activeField] || {};
+    const tc = this._getTextColors();
 
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillStyle = tc.main;
     ctx.font = '10px Inter, sans-serif';
 
     // Top-left: position info
@@ -524,15 +559,15 @@ export class PatchRenderer {
     }
 
     // Bottom/top labels
-    ctx.fillStyle = 'rgba(255,150,50,0.6)';
+    ctx.fillStyle = tc.warm;
     ctx.textAlign = 'center';
     ctx.fillText('deeper (hotter)', size / 2, size - 6);
-    ctx.fillStyle = 'rgba(80,160,255,0.6)';
+    ctx.fillStyle = tc.cool;
     ctx.fillText('shallower (cooler)', size / 2, 14);
 
     // Ra label
     if (this.sim) {
-      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillStyle = tc.dim;
       ctx.textAlign = 'right';
       ctx.fillText(`Ra = ${this.sim.Ra.toExponential(1)}`, size - 8, size - 6);
     }
@@ -558,8 +593,8 @@ export class PatchRenderer {
       ctx.fillRect(barX, barY + py, barW, 1);
     }
 
-    // Border
-    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    const tc0 = this._getTextColors();
+    ctx.strokeStyle = tc0.dim;
     ctx.lineWidth = 0.5;
     ctx.strokeRect(barX, barY, barW, barH);
 
@@ -579,7 +614,8 @@ export class PatchRenderer {
       }
     }
 
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    const tc = this._getTextColors();
+    ctx.fillStyle = tc.main;
     ctx.font = '8px monospace';
     ctx.textAlign = 'left';
     ctx.fillText(valMax, barX + barW + 3, barY + 7);
