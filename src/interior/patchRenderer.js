@@ -21,19 +21,71 @@ export class PatchRenderer {
    */
   constructor(canvas, size = 512) {
     this.canvas = canvas;
-    this.size = size;
-    canvas.width = size;
-    canvas.height = size;
+    this.cssSize = size;
+
+    // HiDPI support
+    const dpr = window.devicePixelRatio || 1;
+    this.dpr = dpr;
+    this.size = Math.round(size * dpr);
+    canvas.width = this.size;
+    canvas.height = this.size;
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
+
     this.ctx = canvas.getContext('2d');
+    this.ctx.scale(dpr, dpr); // scale so drawing coords are in CSS pixels
     this.sim = null;
     this.depthInfo = null;
-    this.activeField = 'temperature'; // 'temperature', 'density', 'pressure', 'energy', 'velocity'
-    this.model = null; // 1D interior model for radial profile rendering
+    this.activeField = 'temperature';
+    this.model = null;
+    this.showStreamlines = true;
+
+    // Global color range (set once from the 1D model, not per-frame)
+    this._globalRange = null; // { T: {min,max}, rho: {min,max}, ... }
   }
 
-  setModel(model) { this.model = model; }
+  setModel(model) {
+    this.model = model;
+    this._computeGlobalRanges();
+  }
 
   setField(field) { this.activeField = field; }
+
+  setShowStreamlines(show) { this.showStreamlines = show; }
+
+  /**
+   * Precompute global min/max for each field from the full 1D model.
+   * Uses log scale for T, ρ, P, ε so the colormap spans the full star.
+   */
+  _computeGlobalRanges() {
+    const m = this.model;
+    if (!m) return;
+    this._globalRange = {};
+    const fields = {
+      temperature: m.T,
+      density: m.rho,
+      pressure: m.P,
+      energy: m.epsilon,
+    };
+    for (const [name, arr] of Object.entries(fields)) {
+      let min = Infinity, max = -Infinity;
+      for (let i = 0; i < arr.length; i++) {
+        const v = arr[i];
+        if (v > 0 && isFinite(v)) {
+          const lv = Math.log10(v);
+          if (lv < min) min = lv;
+          if (lv > max) max = lv;
+        }
+      }
+      this._globalRange[name] = { min, max };
+    }
+    // Velocity: linear scale, 0 to max
+    let vMax = 0;
+    for (let i = 0; i < m.v_conv.length; i++) {
+      if (m.v_conv[i] > vMax) vMax = m.v_conv[i];
+    }
+    this._globalRange.velocity = { min: 0, max: vMax || 1 };
+  }
 
   setSim(sim) {
     this.sim = sim;
@@ -45,35 +97,43 @@ export class PatchRenderer {
 
   render() {
     if (!this.sim) return;
-    const { ctx, size, sim } = this;
+    const { ctx, sim, dpr } = this;
+    const pixelSize = this.size; // actual pixel size (CSS * dpr)
+    const cssSize = this.cssSize;
     const { Nx, Ny } = sim;
 
-    ctx.clearRect(0, 0, size, size);
+    // Reset transform for pixel-level drawing
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, pixelSize, pixelSize);
 
     // --- Layer 1: Heatmap for active field ---
-    const imgData = ctx.createImageData(size, size);
+    const imgData = ctx.createImageData(pixelSize, pixelSize);
     const data = imgData.data;
     const cmap = getColormap(this.activeField);
     const fieldData = this._getFieldData();
+    const useLog = (this.activeField !== 'velocity');
 
-    // Find range
-    let fMin = Infinity, fMax = -Infinity;
-    for (const v of fieldData.values) {
-      if (v < fMin) fMin = v;
-      if (v > fMax) fMax = v;
+    // Use global range from 1D model (log scale for T/ρ/P/ε)
+    let fMin, fMax;
+    const gr = this._globalRange && this._globalRange[this.activeField];
+    if (gr && this.activeField !== 'velocity') {
+      fMin = gr.min; fMax = gr.max; // already log10
+    } else if (gr) {
+      fMin = gr.min; fMax = gr.max;
+    } else {
+      fMin = 0; fMax = 1;
     }
     const fRange = fMax - fMin || 1;
 
-    for (let py = 0; py < size; py++) {
-      for (let px = 0; px < size; px++) {
-        const fi = (px / size) * Nx;
-        const fj = (py / size) * Ny;
+    for (let py = 0; py < pixelSize; py++) {
+      for (let px = 0; px < pixelSize; px++) {
+        const fi = (px / pixelSize) * Nx;
+        const fj = (py / pixelSize) * Ny;
         const i0 = Math.min(Math.floor(fi), Nx - 1);
         const j0 = Math.min(Math.floor(fj), Ny - 1);
         const fx = fi - i0;
         const fy = fj - j0;
 
-        // Flip y: sim j=0 is bottom (hot), pixel y=0 is top
         const sj0 = Ny - 1 - j0;
         const sj1 = Math.max(0, sj0 - 1);
 
@@ -87,13 +147,21 @@ export class PatchRenderer {
           val = (1 - fx) * ((1 - fy) * v00 + fy * v01) +
                 fx * ((1 - fy) * v10 + fy * v11);
         } else {
-          // 1D profile: only varies with height (j)
           val = fieldData.values[sj0] || 0;
         }
 
-        const t = (val - fMin) / fRange;
+        // Apply log scale for global colormap (except velocity)
+        let t;
+        if (useLog && val > 0) {
+          t = (Math.log10(val) - fMin) / fRange;
+        } else if (!useLog) {
+          t = (val - fMin) / fRange;
+        } else {
+          t = 0;
+        }
+
         const [r, g, b] = cmap(Math.max(0, Math.min(1, t)));
-        const idx4 = (py * size + px) * 4;
+        const idx4 = (py * pixelSize + px) * 4;
         data[idx4] = r;
         data[idx4 + 1] = g;
         data[idx4 + 2] = b;
@@ -102,8 +170,13 @@ export class PatchRenderer {
     }
     ctx.putImageData(imgData, 0, 0);
 
-    // --- Layer 2: Streamlines ---
-    this._drawStreamlines();
+    // Restore DPR scaling for vector drawing (labels, streamlines)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // --- Layer 2: Streamlines (if enabled) ---
+    if (this.showStreamlines) {
+      this._drawStreamlines();
+    }
 
     // --- Layer 3: Mini-map showing box position in star ---
     this._drawMiniMap();
@@ -175,7 +248,7 @@ export class PatchRenderer {
   }
 
   _drawStreamlines() {
-    const { ctx, size, sim } = this;
+    const { ctx, cssSize: size, sim } = this;
     if (!sim) return;
     const maxV = sim.maxVelocity();
     if (maxV < 1e-10) return;
@@ -286,9 +359,9 @@ export class PatchRenderer {
    */
   _drawMiniMap() {
     if (!this.depthInfo || !this.model) return;
-    const { ctx, size } = this;
+    const { ctx, cssSize: size } = this;
 
-    const mapR = 36; // radius of the mini-star circle
+    const mapR = 36;
     const cx = size - mapR - 10;
     const cy = mapR + 30;
 
@@ -313,25 +386,17 @@ export class PatchRenderer {
     }
     ctx.restore();
 
-    // Box position: fixed-size marker at the current depth
-    // (constant visual size so it doesn't distort as H_P changes)
+    // Box position: fixed-pixel-size square marker at current depth
     const rFrac = this.depthInfo.rFrac;
-    const markerHalf = 0.06; // fixed radial half-width in r/R
-    const rInner = Math.max(0, rFrac - markerHalf);
-    const rOuter = Math.min(1, rFrac + markerHalf);
-    const wedgeAngle = Math.PI / 5;
-    const startAngle = -Math.PI / 2 - wedgeAngle / 2;
-    const endAngle = -Math.PI / 2 + wedgeAngle / 2;
+    const markerPx = 6; // half-size in pixels (constant regardless of depth)
+    const markerY = cy - rFrac * mapR; // above center (upward = outward)
+    const markerX = cx;
 
-    ctx.beginPath();
-    ctx.arc(cx, cy, rOuter * mapR, startAngle, endAngle);
-    ctx.arc(cx, cy, rInner * mapR, endAngle, startAngle, true);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255, 200, 80, 0.5)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.fillStyle = 'rgba(255, 200, 80, 0.6)';
+    ctx.fillRect(markerX - markerPx, markerY - markerPx, markerPx * 2, markerPx * 2);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
     ctx.lineWidth = 1;
-    ctx.stroke();
+    ctx.strokeRect(markerX - markerPx, markerY - markerPx, markerPx * 2, markerPx * 2);
 
     // Center dot
     ctx.beginPath();
@@ -341,7 +406,7 @@ export class PatchRenderer {
   }
 
   _drawLabels() {
-    const { ctx, size, depthInfo } = this;
+    const { ctx, cssSize: size, depthInfo } = this;
 
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     ctx.font = '10px Inter, sans-serif';

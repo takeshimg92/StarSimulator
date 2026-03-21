@@ -498,6 +498,14 @@ function initInteriorPanel() {
     });
   });
 
+  // Streamlines toggle
+  const streamlinesToggle = document.getElementById('interior-streamlines-toggle');
+  if (streamlinesToggle) {
+    streamlinesToggle.addEventListener('change', (e) => {
+      if (patchRenderer) patchRenderer.setShowStreamlines(e.target.checked);
+    });
+  }
+
   // Depth slider
   const depthSlider = document.getElementById('interior-depth-slider');
   const depthLabel = document.getElementById('interior-depth-label');

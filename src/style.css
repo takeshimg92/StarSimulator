@@ -1465,3 +1465,13 @@ input[type="range"]::-moz-range-thumb {
   height: 3px;
   accent-color: rgba(255, 200, 80, 0.7);
 }
+
+.interior-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  margin-left: 8px;
+}
