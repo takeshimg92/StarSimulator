@@ -26,8 +26,14 @@ export class PatchRenderer {
     canvas.height = size;
     this.ctx = canvas.getContext('2d');
     this.sim = null;
-    this.depthInfo = null; // { rFrac, H_P, T, rho, g, boxSize_km }
+    this.depthInfo = null;
+    this.activeField = 'temperature'; // 'temperature', 'density', 'pressure', 'energy', 'velocity'
+    this.model = null; // 1D interior model for radial profile rendering
   }
+
+  setModel(model) { this.model = model; }
+
+  setField(field) { this.activeField = field; }
 
   setSim(sim) {
     this.sim = sim;
@@ -44,52 +50,54 @@ export class PatchRenderer {
 
     ctx.clearRect(0, 0, size, size);
 
-    // --- Layer 1: Temperature heatmap ---
+    // --- Layer 1: Heatmap for active field ---
     const imgData = ctx.createImageData(size, size);
     const data = imgData.data;
-    const cmap = getColormap('temperature');
+    const cmap = getColormap(this.activeField);
+    const fieldData = this._getFieldData();
 
-    // Find T range in the sim
-    let Tmin = Infinity, Tmax = -Infinity;
-    for (let k = 0; k < sim.size; k++) {
-      if (sim.T[k] < Tmin) Tmin = sim.T[k];
-      if (sim.T[k] > Tmax) Tmax = sim.T[k];
+    // Find range
+    let fMin = Infinity, fMax = -Infinity;
+    for (const v of fieldData.values) {
+      if (v < fMin) fMin = v;
+      if (v > fMax) fMax = v;
     }
-    const Trange = Tmax - Tmin || 1;
+    const fRange = fMax - fMin || 1;
 
     for (let py = 0; py < size; py++) {
       for (let px = 0; px < size; px++) {
-        // Map pixel to sim grid
         const fi = (px / size) * Nx;
-        const fj = (py / size) * Ny; // py=0 = top = cool, py=size = bottom = hot
-
-        // Bilinear interpolation
+        const fj = (py / size) * Ny;
         const i0 = Math.min(Math.floor(fi), Nx - 1);
         const j0 = Math.min(Math.floor(fj), Ny - 1);
-        const i1 = Math.min(i0 + 1, Nx - 1);
-        const j1 = Math.min(j0 + 1, Ny - 1);
         const fx = fi - i0;
         const fy = fj - j0;
 
-        // Note: sim j=0 is bottom (hot), but pixel y=0 is top.
-        // Flip: sim_j = Ny - 1 - fj
+        // Flip y: sim j=0 is bottom (hot), pixel y=0 is top
         const sj0 = Ny - 1 - j0;
         const sj1 = Math.max(0, sj0 - 1);
 
-        const T00 = sim.get(sim.T, i0, sj0);
-        const T10 = sim.get(sim.T, i1, sj0);
-        const T01 = sim.get(sim.T, i0, sj1);
-        const T11 = sim.get(sim.T, i1, sj1);
-        const Tval = (1 - fx) * ((1 - fy) * T00 + fy * T01) +
-                     fx * ((1 - fy) * T10 + fy * T11);
+        let val;
+        if (fieldData.is2D) {
+          const f = fieldData.field;
+          const v00 = sim.get(f, i0, sj0);
+          const v10 = sim.get(f, i0 + 1, sj0);
+          const v01 = sim.get(f, i0, sj1);
+          const v11 = sim.get(f, i0 + 1, sj1);
+          val = (1 - fx) * ((1 - fy) * v00 + fy * v01) +
+                fx * ((1 - fy) * v10 + fy * v11);
+        } else {
+          // 1D profile: only varies with height (j)
+          val = fieldData.values[sj0] || 0;
+        }
 
-        const t = (Tval - Tmin) / Trange;
+        const t = (val - fMin) / fRange;
         const [r, g, b] = cmap(Math.max(0, Math.min(1, t)));
-        const idx = (py * size + px) * 4;
-        data[idx] = r;
-        data[idx + 1] = g;
-        data[idx + 2] = b;
-        data[idx + 3] = 255;
+        const idx4 = (py * size + px) * 4;
+        data[idx4] = r;
+        data[idx4 + 1] = g;
+        data[idx4 + 2] = b;
+        data[idx4 + 3] = 255;
       }
     }
     ctx.putImageData(imgData, 0, 0);
@@ -101,6 +109,68 @@ export class PatchRenderer {
     this._drawLabels();
   }
 
+  /**
+   * Get the field data for the active field.
+   * Returns { field, values, is2D }.
+   *   - is2D=true: field is a sim Float64Array, sample with (i, j)
+   *   - is2D=false: values is a 1D array[Ny], varies only with height
+   */
+  _getFieldData() {
+    const { sim } = this;
+    const { Nx, Ny } = sim;
+
+    if (this.activeField === 'temperature') {
+      return { field: sim.T, values: sim.T, is2D: true };
+    }
+
+    if (this.activeField === 'velocity') {
+      // Velocity magnitude from sim
+      const vmag = new Float64Array(sim.size);
+      for (let k = 0; k < sim.size; k++) {
+        vmag[k] = Math.sqrt(sim.vx[k] * sim.vx[k] + sim.vy[k] * sim.vy[k]);
+      }
+      return { field: vmag, values: vmag, is2D: true };
+    }
+
+    // For density, pressure, energy: use 1D radial profile from the interior model
+    // mapped to box height (bottom = deeper = higher values)
+    if (!this.model || !this.depthInfo) {
+      // Fallback: linear gradient
+      const vals = new Float64Array(Ny);
+      for (let j = 0; j < Ny; j++) vals[j] = j / (Ny - 1);
+      return { field: null, values: vals, is2D: false };
+    }
+
+    const m = this.model;
+    const rCenter = this.depthInfo.rFrac;
+    const H_P = this.depthInfo.H_P_km * 1000; // back to meters
+    const R = m.radius * 6.957e8; // R_sun in meters
+    const boxHalf = 1.75 * H_P; // half the box height in meters
+
+    let profileArr;
+    switch (this.activeField) {
+      case 'density': profileArr = m.rho; break;
+      case 'pressure': profileArr = m.P; break;
+      case 'energy': profileArr = m.epsilon; break;
+      default: profileArr = m.T;
+    }
+
+    const vals = new Float64Array(Ny);
+    for (let j = 0; j < Ny; j++) {
+      // j=0 is bottom (deeper, larger r toward center), j=Ny-1 is top (shallower)
+      const frac = j / (Ny - 1); // 0=bottom, 1=top
+      const rFrac = rCenter + (0.5 - frac) * (3.5 * H_P / R);
+      // Interpolate from model
+      const rArr = m.rFrac;
+      let lo = 0, hi = rArr.length - 1;
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (rArr[mid] <= rFrac) lo = mid; else hi = mid; }
+      const f = rArr[hi] !== rArr[lo] ? (rFrac - rArr[lo]) / (rArr[hi] - rArr[lo]) : 0;
+      vals[j] = profileArr[lo] + Math.max(0, Math.min(1, f)) * (profileArr[hi] - profileArr[lo]);
+    }
+
+    return { field: null, values: vals, is2D: false };
+  }
+
   _drawStreamlines() {
     const { ctx, size, sim } = this;
     if (!sim) return;
@@ -109,13 +179,14 @@ export class PatchRenderer {
 
     const { Nx, Ny } = sim;
 
-    // Seed along bottom and mid-height
+    // Seed points scattered across the domain (avoid fixed rows)
     const seeds = [];
-    for (let s = 0; s < STREAMLINE_SEEDS; s++) {
-      const i = (s + 0.5) / STREAMLINE_SEEDS * Nx;
-      // Seed at 1/4 and 3/4 height
-      seeds.push({ i, j: Ny * 0.25 });
-      seeds.push({ i, j: Ny * 0.75 });
+    const total = STREAMLINE_SEEDS * 2;
+    for (let s = 0; s < total; s++) {
+      seeds.push({
+        i: (s * 7.13 + 3.7) % Nx,  // quasi-random spread via irrational offset
+        j: 2 + ((s * 11.17 + 1.3) % (Ny - 4)),
+      });
     }
 
     for (const seed of seeds) {

@@ -488,6 +488,16 @@ function initInteriorPanel() {
 
   patchRenderer = new PatchRenderer(canvas, 512);
 
+  // Field toggle buttons
+  const fieldButtons = document.querySelectorAll('#interior-field-toggle .field-btn');
+  fieldButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      fieldButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      if (patchRenderer) patchRenderer.setField(btn.dataset.field);
+    });
+  });
+
   // Depth slider
   const depthSlider = document.getElementById('interior-depth-slider');
   const depthLabel = document.getElementById('interior-depth-label');
@@ -656,8 +666,10 @@ function rebuildPatchSim() {
     Pr: 0.7,
   });
 
-  // Only a few steps to seed — let per-frame step() develop the flow live
-  patchSim.fastForward(30, 0.01);
+  // Enough steps to develop visible convection cells before first render.
+  // For high Ra (convective zones), cells form quickly. For low Ra, this
+  // just diffuses the noise — still fast since there's no flow to advect.
+  patchSim.fastForward(150, 0.01);
 
   patchRenderer.setSim(patchSim);
   patchRenderer.setDepthInfo({
@@ -770,6 +782,7 @@ function updateInterior(mass) {
       coreConvective: interiorModel.coreConvective,
     });
 
+    patchRenderer.setModel(interiorModel);
     rebuildPatchSim();
   }
 
