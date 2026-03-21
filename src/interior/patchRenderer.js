@@ -106,24 +106,45 @@ export class PatchRenderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, pixelSize, pixelSize);
 
-    // --- Layer 1: Heatmap for active field ---
+    // --- Layer 1: Heatmap with base color + fluctuation brightness ---
+    //
+    // For each row (height), compute the horizontal average (= 1D base value).
+    // Map the base through the colormap for the background color.
+    // Then brighten (hot perturbation) or darken (cool perturbation) based
+    // on the deviation from the average. This makes convective fluctuations
+    // visible at every depth, while the base color shows the radial gradient.
+    //
     const imgData = ctx.createImageData(pixelSize, pixelSize);
     const data = imgData.data;
     const cmap = getColormap(this.activeField);
     const fieldData = this._getFieldData();
-    const useLog = (this.activeField !== 'velocity');
 
-    // Use global range from 1D model (log scale for T/ρ/P/ε)
-    let fMin, fMax;
+    // Global range for base color (log scale for T/ρ/P/ε)
+    const useLog = (this.activeField !== 'velocity');
     const gr = this._globalRange && this._globalRange[this.activeField];
-    if (gr && this.activeField !== 'velocity') {
-      fMin = gr.min; fMax = gr.max; // already log10
-    } else if (gr) {
-      fMin = gr.min; fMax = gr.max;
-    } else {
-      fMin = 0; fMax = 1;
+    let gMin = gr ? gr.min : 0;
+    let gMax = gr ? gr.max : 1;
+    const gRange = gMax - gMin || 1;
+
+    // Pre-compute row averages and values for fluctuation
+    // (work in sim-grid rows, then map to pixels)
+    const rowAvg = new Float64Array(Ny);
+    const rowStd = new Float64Array(Ny);
+
+    if (fieldData.is2D) {
+      const f = fieldData.field;
+      for (let sj = 0; sj < Ny; sj++) {
+        let sum = 0;
+        for (let i = 0; i < Nx; i++) sum += sim.get(f, i, sj);
+        rowAvg[sj] = sum / Nx;
+        let sq = 0;
+        for (let i = 0; i < Nx; i++) sq += (sim.get(f, i, sj) - rowAvg[sj]) ** 2;
+        rowStd[sj] = Math.sqrt(sq / Nx) || 1e-10;
+      }
     }
-    const fRange = fMax - fMin || 1;
+
+    // Fluctuation amplification factor (makes small deviations visible)
+    const FLUCT_GAIN = 40;
 
     for (let py = 0; py < pixelSize; py++) {
       for (let px = 0; px < pixelSize; px++) {
@@ -137,7 +158,7 @@ export class PatchRenderer {
         const sj0 = Ny - 1 - j0;
         const sj1 = Math.max(0, sj0 - 1);
 
-        let val;
+        let val, baseVal;
         if (fieldData.is2D) {
           const f = fieldData.field;
           const v00 = sim.get(f, i0, sj0);
@@ -146,25 +167,45 @@ export class PatchRenderer {
           const v11 = sim.get(f, i0 + 1, sj1);
           val = (1 - fx) * ((1 - fy) * v00 + fy * v01) +
                 fx * ((1 - fy) * v10 + fy * v11);
+          baseVal = (1 - fy) * rowAvg[sj0] + fy * rowAvg[sj1];
         } else {
           val = fieldData.values[sj0] || 0;
+          baseVal = val; // 1D fields have no fluctuation
         }
 
-        // Apply log scale for global colormap (except velocity)
+        // Map base value to colormap position
+        // For 2D sim fields (T, v): values are normalized 0-1.
+        // Map to physical range using depth info for the base color.
         let t;
-        if (useLog && val > 0) {
-          t = (Math.log10(val) - fMin) / fRange;
-        } else if (!useLog) {
-          t = (val - fMin) / fRange;
+        if (fieldData.is2D && this.depthInfo && gr) {
+          // Linearly map sim's baseVal (0=surface, 1=core) to a position
+          // within the local physical range at this depth
+          const rFrac = this.depthInfo.rFrac;
+          // The sim's T goes from T_bot=1 (deeper) to T_top=0 (shallower)
+          // Map to global log scale: interpolate between local T values
+          const localLogVal = gMin + (gMax - gMin) * baseVal;
+          t = (localLogVal - gMin) / gRange;
+        } else if (useLog && baseVal > 0) {
+          t = (Math.log10(baseVal) - gMin) / gRange;
         } else {
-          t = 0;
+          t = (baseVal - gMin) / gRange;
+        }
+        t = Math.max(0, Math.min(1, t));
+
+        const [cr, cg, cb] = cmap(t);
+
+        // Add fluctuation brightness: deviation from horizontal average
+        let fluct = 0;
+        if (fieldData.is2D) {
+          const dev = val - baseVal;
+          const std = (1 - fy) * rowStd[sj0] + fy * rowStd[sj1];
+          fluct = (std > 1e-12) ? (dev / std) * FLUCT_GAIN : 0;
         }
 
-        const [r, g, b] = cmap(Math.max(0, Math.min(1, t)));
         const idx4 = (py * pixelSize + px) * 4;
-        data[idx4] = r;
-        data[idx4 + 1] = g;
-        data[idx4 + 2] = b;
+        data[idx4] = Math.max(0, Math.min(255, cr + fluct));
+        data[idx4 + 1] = Math.max(0, Math.min(255, cg + fluct));
+        data[idx4 + 2] = Math.max(0, Math.min(255, cb + fluct));
         data[idx4 + 3] = 255;
       }
     }
