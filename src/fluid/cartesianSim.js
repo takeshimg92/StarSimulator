@@ -369,18 +369,20 @@ export class CartesianSim {
     // randomly to replace expired ones.
     if (!this._anomalies) this._anomalies = [];
 
-    const raScale = Math.min(1.0, 1500 / (this.Ra || 1500));
-    const tAmp = dT * 0.001 * raScale; // very gentle per-frame contribution
+    // Amplitude: always noticeable but not overwhelming.
+    // In convective zones, perturbations break up stagnant cells.
+    // In subcritical zones, they provide gentle visible motion.
+    const tAmp = dT * 0.003;
 
-    // Spawn new anomaly occasionally (~1% chance per frame)
-    if (this._anomalies.length < 3 && Math.random() < 0.01) {
+    // Spawn new anomaly: ~2% chance per frame, up to 4 active
+    if (this._anomalies.length < 4 && Math.random() < 0.02) {
       this._anomalies.push({
         cx: Math.random() * Nx,
         cy: 4 + Math.random() * (Ny - 8),
-        r: 5 + Math.floor(Math.random() * 5),
+        r: 4 + Math.floor(Math.random() * 6),
         sign: Math.random() > 0.5 ? 1 : -1,
         life: 0,
-        maxLife: 60 + Math.floor(Math.random() * 120), // 60-180 frames
+        maxLife: 80 + Math.floor(Math.random() * 160), // 80-240 frames
       });
     }
 

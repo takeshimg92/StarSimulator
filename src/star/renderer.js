@@ -1183,7 +1183,9 @@ function animate() {
   const currentCamDist = camera.position.length();
 
   // Update orbit controls limits
-  controls.minDistance = Math.max(1.5, scale * 1.2);
+  // When inside the star, don't constrain minDistance — let the user zoom out freely
+  const camInsideStar = camera.position.length() < scale * 1.3;
+  controls.minDistance = camInsideStar ? 1.5 : Math.max(1.5, scale * 1.2);
   controls.maxDistance = 600;
 
   // Detect if camera is inside the star
