@@ -1043,8 +1043,13 @@ input[type="range"]::-moz-range-thumb {
   }
 
   #interior-mobile-panel canvas {
-    flex: 1;
-    min-height: 0;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: calc(100% - 40px); /* leave room for controls */
+    aspect-ratio: 1;
+    margin: 0 auto;
+    flex: 0 0 auto;
   }
 
   /* Hide desktop floating panel on mobile */
