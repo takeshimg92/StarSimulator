@@ -43,13 +43,15 @@ export class CartesianSim {
     this.Ra = opts.Ra || 1e4;    // Rayleigh number
     this.Pr = opts.Pr || 0.7;   // Prandtl number
 
-    // Derived diffusion coefficients (in sim units where box height = 1)
-    // Ra = g α ΔT H³ / (ν κ_th),  Pr = ν / κ_th
-    // Choose κ_th = 1, then ν = Pr, and g_eff = Ra * ν * κ_th / (ΔT * H³)
-    //   = Ra * Pr / 1 = Ra * Pr  (with ΔT=1, H=1)
-    this.kappa_th = 0.02;
-    this.nu = this.kappa_th * this.Pr;
-    this.g_eff = this.Ra * this.nu * this.kappa_th;
+    // Non-dimensionalization: box height H = 1, ΔT = 1, α = 1.
+    // Ra = g·α·ΔT·H³ / (ν·κ_th)
+    // Pr = ν / κ_th
+    //
+    // Set κ_th = 1, ν = Pr, g_eff = Ra·Pr (= Ra·ν·κ_th with κ_th=1).
+    // This gives the correct coupling strength between T and v.
+    this.kappa_th = 1.0;
+    this.nu = this.Pr;       // Pr = ν/κ_th, so ν = Pr when κ_th = 1
+    this.g_eff = this.Ra * this.Pr;
 
     this.T_bot = opts.T_bot ?? 1.0;
     this.T_top = opts.T_top ?? 0.0;
@@ -140,9 +142,9 @@ export class CartesianSim {
       this.vy.fill(0);
     }
 
-    this.kappa_th = 0.02;
-    this.nu = this.kappa_th * this.Pr;
-    this.g_eff = this.Ra * this.nu * this.kappa_th;
+    this.kappa_th = 1.0;
+    this.nu = this.Pr;
+    this.g_eff = this.Ra * this.Pr;
 
     this._initTemperature();
     this.time = 0;

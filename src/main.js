@@ -685,7 +685,7 @@ async function rebuildPatchSim() {
   });
 
   // Develop convection cells — fewer steps for faster loading
-  patchSim.fastForward(80, 0.015);
+  patchSim.fastForward(120, 0.002);
 
   patchRenderer.setSim(patchSim);
   patchRenderer.setDepthInfo({
@@ -807,7 +807,7 @@ function updateInterior(mass) {
 
   // Step the simulation
   if (patchSim) {
-    patchSim.step(0.01);
+    patchSim.step(0.002);
   }
 
   // Render
