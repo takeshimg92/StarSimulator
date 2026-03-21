@@ -578,78 +578,86 @@ function setInteriorActive(active) {
 }
 
 /**
- * Compute the local Rayleigh number at a given depth from the 1D model.
- * Ra = g α ΔT H_P³ / (ν κ_th)
- * We use H_P as the length scale and ΔT = dT/dr × H_P as the temperature
- * drop across one scale height.
+ * Compute local patch parameters at a given depth.
+ *
+ * The effective Rayleigh number for the 2D sim is derived from ∇_rad/∇_ad,
+ * NOT from the physical Ra (which is ~10¹⁰-10¹⁵ everywhere in a star).
+ *
+ * Physical stellar Ra is always supercritical because viscosity is tiny.
+ * What determines whether convection occurs is the Schwarzschild criterion:
+ * ∇_rad > ∇_ad. The Boussinesq box model doesn't capture subadiabatic
+ * stratification, so we translate the 1D physics into an effective Ra:
+ *
+ *   ∇_rad/∇_ad < 1 (radiative): Ra_eff < Ra_crit → stable
+ *   ∇_rad/∇_ad > 1 (convective): Ra_eff > Ra_crit → convection
+ *
+ * The mapping provides a smooth transition at the boundary.
  */
-function computeLocalRa(model, rFrac) {
-  const { G, k_B, m_p, sigma: sig, R_sun } = constants;
+function computeLocalPatchParams(model, rFrac) {
+  const { G, R_sun } = constants;
   const R = model.radius * R_sun;
 
-  // Interpolate quantities at this depth
   const idx = Math.min(model.N - 1, Math.round(rFrac * (model.N - 1)));
   const rho = model.rho[idx];
   const T = model.T[idx];
   const P = model.P[idx];
-  const kappa = model.kappa[idx];
   const m = model.mEnclosed[idx];
   const r = rFrac * R;
+  const nabla_rad = model.nabla_rad[idx];
+  const NABLA_AD = 0.4;
 
-  if (rho < 1e-10 || T < 100 || r < 1e3) return { Ra: 0, H_P_km: 1, g_local: 0 };
+  if (rho < 1e-10 || T < 100 || r < 1e3) {
+    return { Ra_eff: 0, H_P_km: 1, boxSize_km: 1, T_local: T, rho_local: rho, isConvective: false, superadiabatic: 0 };
+  }
 
   const g = G * m / (r * r);
   const H_P = P / (rho * g);
-  const cp = 5 * k_B / (2 * model.mu * m_p);
-  const kth = (16 * sig * T * T * T) / (3 * kappa * rho * rho * cp);
 
-  // Thermal expansion α = 1/T for ideal gas
-  const alpha = 1 / T;
+  // Superadiabatic ratio: how far above (or below) the convective threshold
+  const ratio = nabla_rad / NABLA_AD;
 
-  // Temperature gradient dT/dr from the polytrope
-  const dTdr = (idx > 0)
-    ? (model.T[idx] - model.T[idx - 1]) / ((model.rFrac[idx] - model.rFrac[idx - 1]) * R)
-    : 0;
-  const deltaT = Math.abs(dTdr) * H_P;
-
-  // Estimate kinematic viscosity ν from the photon mean free path (radiative viscosity)
-  // ν_rad ~ c / (3 κ ρ) — a rough estimate
-  const nu = constants.c / (3 * kappa * rho);
-
-  const Ra = alpha * g * deltaT * H_P * H_P * H_P / (nu * kth);
+  // Map to effective Ra for the Boussinesq sim:
+  //   ratio = 0.0 → Ra_eff ≈ 0 (deep radiative, completely stable)
+  //   ratio = 0.5 → Ra_eff ≈ 800 (weakly stable, slow diffusive decay visible)
+  //   ratio = 1.0 → Ra_eff ≈ 1700 (neutral — near critical)
+  //   ratio = 2.0 → Ra_eff ≈ 20000 (moderately convective)
+  //   ratio = 10+ → Ra_eff ≈ 100000 (vigorous convection)
+  let Ra_eff;
+  if (ratio <= 1) {
+    // Subcritical: linear ramp from 0 to ~1700
+    Ra_eff = ratio * 1700;
+  } else {
+    // Supercritical: rapid increase with superadiabatic excess
+    Ra_eff = 1700 + (ratio - 1) * 15000;
+  }
+  Ra_eff = Math.min(Ra_eff, 1e5); // cap for numerical stability
 
   return {
-    Ra: Math.max(0, Ra),
+    Ra_eff,
     H_P,
     H_P_km: H_P / 1000,
     g_local: g,
     T_local: T,
     rho_local: rho,
-    kth,
-    nu,
     boxSize_km: (3.5 * H_P) / 1000,
     isConvective: model.isConvective[idx],
+    superadiabatic: ratio,
   };
 }
 
 function rebuildPatchSim() {
   if (!interiorModel || !patchRenderer) return;
 
-  const info = computeLocalRa(interiorModel, currentDepthFrac);
-
-  // Clamp Ra to a displayable range
-  // Ra < ~1700: no convection (stable). Ra > ~10⁶: very turbulent (expensive).
-  const Ra = Math.min(1e5, Math.max(100, info.Ra));
-  const Pr = info.nu > 0 && info.kth > 0 ? info.nu / info.kth : 0.7;
+  const info = computeLocalPatchParams(interiorModel, currentDepthFrac);
 
   patchSim = new CartesianSim({
     Nx: 128, Ny: 128,
-    Ra: info.isConvective ? Math.max(Ra, 5000) : Math.min(Ra, 500),
-    Pr: Math.max(0.1, Math.min(10, Pr)),
+    Ra: info.Ra_eff,
+    Pr: 0.7,
   });
 
-  // Fast-forward to develop convection (if Ra > critical)
-  patchSim.fastForward(200, 0.01);
+  // Only a few steps to seed — let per-frame step() develop the flow live
+  patchSim.fastForward(30, 0.01);
 
   patchRenderer.setSim(patchSim);
   patchRenderer.setDepthInfo({
@@ -659,6 +667,7 @@ function rebuildPatchSim() {
     T: info.T_local,
     rho: info.rho_local,
     isConvective: info.isConvective,
+    Ra: info.Ra_eff,
   });
 }
 
