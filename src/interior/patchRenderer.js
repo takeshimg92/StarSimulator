@@ -379,8 +379,10 @@ export class PatchRenderer {
       // respawn while convection is still developing from initial conditions
       if (speed > maxV * 0.01) p.age++;
 
-      // Respawn if out of bounds or too old
-      if (p.ci < 0 || p.ci > Nx - 1 || p.cj < 1 || p.cj > Ny - 1 || p.age > PARTICLE_MAX_AGE) {
+      // Respawn if out of bounds, stuck near walls, or too old
+      const wallDist = Math.min(p.cj, Ny - 1 - p.cj);
+      const stuckAtWall = wallDist < 2 && speed < maxV * 0.02;
+      if (p.ci < 0 || p.ci > Nx - 1 || p.cj < 0.5 || p.cj > Ny - 1.5 || stuckAtWall || p.age > PARTICLE_MAX_AGE) {
         const fresh = this._spawnParticle();
         p.ci = fresh.ci;
         p.cj = fresh.cj;
