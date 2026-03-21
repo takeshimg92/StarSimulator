@@ -95,32 +95,45 @@ export class CartesianSim {
     const { Nx, Ny } = this;
     const dT = this.T_bot - this.T_top;
 
+    // Start with linear conduction profile
     for (let j = 0; j < Ny; j++) {
-      const frac = j / (Ny - 1); // 0 = bottom (hot), 1 = top (cool)
+      const frac = j / (Ny - 1);
       const T_base = this.T_bot - dT * frac;
-
       for (let i = 0; i < Nx; i++) {
-        // Perturbation amplitude scales with Ra:
-        // Supercritical (Ra > 1708): strong seeding to develop cells fast
-        // Subcritical (Ra < 1708): minimal seeding — diffusion should kill it
-        const raFrac = Math.min(1, this.Ra / 5000); // 0 at low Ra, 1 at Ra≥5000
-        const amp = 0.005 + raFrac * 0.04; // 0.5% to 4.5% of ΔT
-
-        const mode1 = amp * dT * Math.sin(2 * Math.PI * i / Nx * 3) * Math.sin(Math.PI * frac);
-        const mode2 = amp * 0.5 * dT * Math.sin(2 * Math.PI * i / Nx * 6 + 1.3) * Math.sin(2 * Math.PI * frac);
-        this.set(this.T, i, j, T_base + mode1 + mode2);
+        this.set(this.T, i, j, T_base);
       }
     }
 
-    // Velocity seed also scaled by Ra
-    const vSeed = Math.min(0.02, this.Ra / 5000 * 0.02);
-    for (let j = 0; j < Ny; j++) {
-      for (let i = 0; i < Nx; i++) {
-        const k = this.idx(i, j);
-        this.vx[k] = vSeed * Math.sin(2 * Math.PI * i / Nx * 4) * Math.sin(Math.PI * j / Ny);
-        this.vy[k] = vSeed * Math.cos(2 * Math.PI * i / Nx * 4) * Math.sin(Math.PI * j / Ny);
+    // Add circular thermal blobs at random positions (not grid-aligned)
+    const raFrac = Math.min(1, this.Ra / 5000);
+    const amp = (0.005 + raFrac * 0.04) * dT;
+    const nBlobs = 8 + Math.floor(raFrac * 12); // 8-20 blobs
+
+    for (let b = 0; b < nBlobs; b++) {
+      const cx = Math.random() * Nx;
+      const cy = 3 + Math.random() * (Ny - 6);
+      const r = 3 + Math.random() * 5; // radius 3-8 cells
+      const r2 = r * r;
+      const sign = Math.random() > 0.5 ? 1 : -1;
+
+      const iMin = Math.max(0, Math.floor(cx - r * 2));
+      const iMax = Math.min(Nx - 1, Math.ceil(cx + r * 2));
+      const jMin = Math.max(1, Math.floor(cy - r * 2));
+      const jMax = Math.min(Ny - 2, Math.ceil(cy + r * 2));
+
+      for (let j = jMin; j <= jMax; j++) {
+        for (let i = iMin; i <= iMax; i++) {
+          const dx = i - cx;
+          const dy = j - cy;
+          const d2 = dx * dx + dy * dy;
+          this.T[this.idx(i, j)] += sign * amp * Math.exp(-d2 / (2 * r2));
+        }
       }
     }
+
+    // No initial velocity — let buoyancy develop it naturally
+    this.vx.fill(0);
+    this.vy.fill(0);
   }
 
   reset(opts = {}) {
