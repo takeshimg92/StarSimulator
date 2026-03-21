@@ -323,10 +323,14 @@ export class CartesianSim {
     const maxV = this.maxVelocity() || 0.01;
     const dT = Math.abs(this.T_bot - this.T_top) || 1;
 
-    // Number of blobs per frame (fewer = smoother, more = noisier)
-    const nBlobs = 6;
+    // Only inject blobs occasionally (every ~20 frames)
+    this._noiseCounter = (this._noiseCounter || 0) + 1;
+    if (this._noiseCounter % 20 !== 0) return;
+
+    // 2-3 blobs per injection event
+    const nBlobs = 2 + Math.floor(Math.random() * 2);
     // Blob radius in grid cells (~convective eddy scale)
-    const blobR = 4;
+    const blobR = 5;
     const blobR2 = blobR * blobR;
 
     const tAmp = dT * 0.008;  // ~1% of ΔT per blob
