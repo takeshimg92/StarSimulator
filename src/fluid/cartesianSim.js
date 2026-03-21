@@ -100,21 +100,25 @@ export class CartesianSim {
       const T_base = this.T_bot - dT * frac;
 
       for (let i = 0; i < Nx; i++) {
-        // Smooth multi-mode perturbation (no white noise)
-        // Modes at different scales seed convection cells of various sizes
-        const mode1 = 0.04 * dT * Math.sin(2 * Math.PI * i / Nx * 3) * Math.sin(Math.PI * frac);
-        const mode2 = 0.02 * dT * Math.sin(2 * Math.PI * i / Nx * 6 + 1.3) * Math.sin(2 * Math.PI * frac);
-        const mode3 = 0.01 * dT * Math.sin(2 * Math.PI * i / Nx * 11 + 2.7) * Math.sin(3 * Math.PI * frac);
-        this.set(this.T, i, j, T_base + mode1 + mode2 + mode3);
+        // Perturbation amplitude scales with Ra:
+        // Supercritical (Ra > 1708): strong seeding to develop cells fast
+        // Subcritical (Ra < 1708): minimal seeding — diffusion should kill it
+        const raFrac = Math.min(1, this.Ra / 5000); // 0 at low Ra, 1 at Ra≥5000
+        const amp = 0.005 + raFrac * 0.04; // 0.5% to 4.5% of ΔT
+
+        const mode1 = amp * dT * Math.sin(2 * Math.PI * i / Nx * 3) * Math.sin(Math.PI * frac);
+        const mode2 = amp * 0.5 * dT * Math.sin(2 * Math.PI * i / Nx * 6 + 1.3) * Math.sin(2 * Math.PI * frac);
+        this.set(this.T, i, j, T_base + mode1 + mode2);
       }
     }
 
-    // Small smooth velocity seed
+    // Velocity seed also scaled by Ra
+    const vSeed = Math.min(0.02, this.Ra / 5000 * 0.02);
     for (let j = 0; j < Ny; j++) {
       for (let i = 0; i < Nx; i++) {
         const k = this.idx(i, j);
-        this.vx[k] = 0.02 * Math.sin(2 * Math.PI * i / Nx * 4) * Math.sin(Math.PI * j / Ny);
-        this.vy[k] = 0.02 * Math.cos(2 * Math.PI * i / Nx * 4) * Math.sin(Math.PI * j / Ny);
+        this.vx[k] = vSeed * Math.sin(2 * Math.PI * i / Nx * 4) * Math.sin(Math.PI * j / Ny);
+        this.vy[k] = vSeed * Math.cos(2 * Math.PI * i / Nx * 4) * Math.sin(Math.PI * j / Ny);
       }
     }
   }

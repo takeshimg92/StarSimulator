@@ -10,9 +10,9 @@
 
 import { getColormap, FIELD_INFO } from './colormaps.js';
 
-const PARTICLE_COUNT = 300;
-const PARTICLE_MAX_AGE = 200; // frames before respawn
-const PARTICLE_RADIUS = 1.8;
+const PARTICLE_COUNT = 400;
+const PARTICLE_MAX_AGE = 250;
+const PARTICLE_RADIUS = 0.8;
 
 export class PatchRenderer {
   /**
@@ -347,8 +347,8 @@ export class PatchRenderer {
     }
     const tctx = this._trailCtx;
 
-    // Fade the trail canvas (creates the fading tail effect)
-    tctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
+    // Faster fade so trails don't accumulate and darken the background
+    tctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
     tctx.fillRect(0, 0, this.size, this.size);
 
     const dpr = this.dpr;
@@ -384,21 +384,7 @@ export class PatchRenderer {
       const px = (p.ci / Nx) * this.size;
       const py = (1 - p.cj / Ny) * this.size;
 
-      // Color by local vy: rising (hot) = warm, sinking (cool) = blue
-      const speed = Math.sqrt(vx * vx + vy * vy);
-      const opacity = Math.min(0.9, speed / maxV * 2);
-
-      let r, g, b;
-      if (vy > 0.02 * maxV) {
-        r = 255; g = 190; b = 60;   // rising hot
-      } else if (vy < -0.02 * maxV) {
-        r = 80; g = 150; b = 255;    // sinking cool
-      } else {
-        r = 200; g = 200; b = 200;   // neutral
-      }
-
-      // Draw dot on trail canvas (accumulates over time)
-      tctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+      tctx.fillStyle = 'rgba(220, 220, 220, 0.7)';
       tctx.beginPath();
       tctx.arc(px, py, PARTICLE_RADIUS * dpr, 0, Math.PI * 2);
       tctx.fill();
