@@ -1040,6 +1040,7 @@ input[type="range"]::-moz-range-thumb {
   #interior-mobile-panel.slice-active {
     display: flex !important;
     flex-direction: column;
+    align-items: center;
   }
 
   #interior-mobile-panel canvas {
