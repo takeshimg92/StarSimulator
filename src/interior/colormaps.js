@@ -95,20 +95,15 @@ export function colormapEnergy(t) {
 }
 
 /**
- * Velocity: cividis (dark blue → teal → yellow).
- * Perceptually uniform, colorblind-friendly.
+ * Velocity: blue → yellow → red (coolwarm-style, intuitive for flow).
  */
 export function colormapVelocity(t) {
   return ramp(t, [
-    [0.00, [0, 32, 77]],
-    [0.13, [0, 50, 100]],
-    [0.25, [46, 71, 105]],
-    [0.38, [78, 91, 105]],
-    [0.50, [109, 112, 108]],
-    [0.63, [142, 132, 100]],
-    [0.75, [177, 155, 78]],
-    [0.88, [216, 183, 47]],
-    [1.00, [253, 231, 37]],
+    [0.00, [10, 20, 120]],
+    [0.25, [40, 80, 200]],
+    [0.50, [240, 220, 50]],
+    [0.75, [220, 100, 20]],
+    [1.00, [180, 10, 10]],
   ]);
 }
 
