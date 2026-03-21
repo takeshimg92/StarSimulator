@@ -320,47 +320,38 @@ export class CartesianSim {
    */
   _addTurbulentNoise(dt) {
     const { Nx, Ny } = this;
-    const maxV = this.maxVelocity() || 0.01;
     const dT = Math.abs(this.T_bot - this.T_top) || 1;
 
-    // Only inject blobs occasionally (every ~20 frames)
-    this._noiseCounter = (this._noiseCounter || 0) + 1;
-    if (this._noiseCounter % 20 !== 0) return;
+    // Poisson-like random injection: ~2.5% chance per frame → avg every ~40 frames
+    // Randomized timing avoids the "constant pump" feel
+    if (Math.random() > 0.025) return;
 
-    // 2-3 blobs per injection event
-    const nBlobs = 2 + Math.floor(Math.random() * 2);
-    // Blob radius in grid cells (~convective eddy scale)
-    const blobR = 5;
+    // Scale amplitude inversely with Ra: convective zones already have
+    // strong natural buoyancy-driven flow and need minimal external nudging.
+    // Subcritical zones need more to show any visible structure.
+    const raScale = Math.min(1.0, 1500 / (this.Ra || 1500));
+
+    // 1 gentle blob per event — temperature only (let buoyancy drive velocity)
+    const blobR = 5 + Math.floor(Math.random() * 5); // 5-9 cells
     const blobR2 = blobR * blobR;
+    const tAmp = dT * 0.002 * raScale; // very gentle: ~0.2% of ΔT
 
-    const tAmp = dT * 0.008;  // ~1% of ΔT per blob
-    const vAmp = maxV * 0.008;
+    const cx = Math.random() * Nx;
+    const cy = 4 + Math.random() * (Ny - 8);
+    const sign = Math.random() > 0.5 ? 1 : -1;
 
-    for (let b = 0; b < nBlobs; b++) {
-      // Random blob center (interior only)
-      const cx = Math.random() * Nx;
-      const cy = 2 + Math.random() * (Ny - 4);
-      // Random sign: hot blob (+) or cool blob (-)
-      const sign = Math.random() > 0.5 ? 1 : -1;
+    const iMin = Math.max(0, Math.floor(cx - blobR * 2));
+    const iMax = Math.min(Nx - 1, Math.ceil(cx + blobR * 2));
+    const jMin = Math.max(2, Math.floor(cy - blobR * 2));
+    const jMax = Math.min(Ny - 3, Math.ceil(cy + blobR * 2));
 
-      // Apply Gaussian-weighted perturbation around center
-      const iMin = Math.max(0, Math.floor(cx - blobR * 2));
-      const iMax = Math.min(Nx - 1, Math.ceil(cx + blobR * 2));
-      const jMin = Math.max(2, Math.floor(cy - blobR * 2));
-      const jMax = Math.min(Ny - 3, Math.ceil(cy + blobR * 2));
-
-      for (let j = jMin; j <= jMax; j++) {
-        for (let i = iMin; i <= iMax; i++) {
-          const dx = i - cx;
-          const dy = j - cy;
-          const r2 = dx * dx + dy * dy;
-          const w = Math.exp(-r2 / (2 * blobR2)); // Gaussian weight
-
-          const k = this.idx(i, j);
-          this.T[k] += sign * tAmp * w;
-          this.vx[k] += (Math.random() - 0.5) * vAmp * w;
-          this.vy[k] += sign * vAmp * w * 0.5; // bias vertical: hot rises, cool sinks
-        }
+    for (let j = jMin; j <= jMax; j++) {
+      for (let i = iMin; i <= iMax; i++) {
+        const dx = i - cx;
+        const dy = j - cy;
+        const r2 = dx * dx + dy * dy;
+        const w = Math.exp(-r2 / (2 * blobR2));
+        this.T[this.idx(i, j)] += sign * tAmp * w;
       }
     }
   }
