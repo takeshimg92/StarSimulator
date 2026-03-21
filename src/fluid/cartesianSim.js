@@ -104,30 +104,36 @@ export class CartesianSim {
       }
     }
 
-    // Add circular thermal blobs at random positions (not grid-aligned)
+    // Smooth isotropic perturbation using superposition of random Fourier modes.
+    // Each mode is a plane wave at a random angle and phase, so the result
+    // has no axis alignment. Wavelengths ~10-25 cells (convective scale).
     const raFrac = Math.min(1, this.Ra / 5000);
     const amp = (0.005 + raFrac * 0.04) * dT;
-    const nBlobs = 8 + Math.floor(raFrac * 12); // 8-20 blobs
+    const nModes = 12;
 
-    for (let b = 0; b < nBlobs; b++) {
-      const cx = Math.random() * Nx;
-      const cy = 3 + Math.random() * (Ny - 6);
-      const r = 3 + Math.random() * 5; // radius 3-8 cells
-      const r2 = r * r;
-      const sign = Math.random() > 0.5 ? 1 : -1;
+    // Generate random modes
+    const modes = [];
+    for (let m = 0; m < nModes; m++) {
+      const angle = Math.random() * 2 * Math.PI;        // random direction
+      const wavelength = 10 + Math.random() * 15;       // 10-25 cells
+      const k = 2 * Math.PI / wavelength;
+      modes.push({
+        kx: k * Math.cos(angle),
+        ky: k * Math.sin(angle),
+        phase: Math.random() * 2 * Math.PI,
+        amp: amp / Math.sqrt(nModes) * (0.5 + Math.random()), // vary per mode
+      });
+    }
 
-      const iMin = Math.max(0, Math.floor(cx - r * 2));
-      const iMax = Math.min(Nx - 1, Math.ceil(cx + r * 2));
-      const jMin = Math.max(1, Math.floor(cy - r * 2));
-      const jMax = Math.min(Ny - 2, Math.ceil(cy + r * 2));
-
-      for (let j = jMin; j <= jMax; j++) {
-        for (let i = iMin; i <= iMax; i++) {
-          const dx = i - cx;
-          const dy = j - cy;
-          const d2 = dx * dx + dy * dy;
-          this.T[this.idx(i, j)] += sign * amp * Math.exp(-d2 / (2 * r2));
+    for (let j = 1; j < Ny - 1; j++) {
+      // Envelope: suppress perturbations near top/bottom boundaries
+      const env = Math.sin(Math.PI * j / (Ny - 1));
+      for (let i = 0; i < Nx; i++) {
+        let perturbation = 0;
+        for (const m of modes) {
+          perturbation += m.amp * Math.sin(m.kx * i + m.ky * j + m.phase);
         }
+        this.T[this.idx(i, j)] += perturbation * env;
       }
     }
 
