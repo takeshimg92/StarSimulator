@@ -186,7 +186,24 @@ export class PatchRenderer {
     // so the radial gradient (hotter at bottom, cooler at top) is visible
     // but doesn't span the entire star's range.
     let localTmin = 0, localTmax = 1;
-    if (fieldData.is2D && this.depthInfo && this.model && gr) {
+    // For velocity: use sim's own range (not 1D model's v_conv which is in
+    // different units and may be zero at this depth)
+    const isVelocity = (this.activeField === 'velocity');
+    if (isVelocity && fieldData.is2D) {
+      // Find sim velocity magnitude range
+      let vMin = Infinity, vMax = -Infinity;
+      for (let k = 0; k < sim.size; k++) {
+        const v = fieldData.field[k];
+        if (v < vMin) vMin = v;
+        if (v > vMax) vMax = v;
+      }
+      // Map directly: 0 → localTmin, max → localTmax (linear, full colormap)
+      localTmin = 0;
+      localTmax = 1;
+      // Override gMin/gMax for the pixel loop below
+      gMin = vMin;
+      gMax = vMax;
+    } else if (fieldData.is2D && this.depthInfo && this.model && gr) {
       const m = this.model;
       const rCenter = this.depthInfo.rFrac;
       const H_P = this.depthInfo.H_P_km * 1000;
@@ -252,9 +269,12 @@ export class PatchRenderer {
 
         // Map base value to colormap position
         let t;
-        if (fieldData.is2D) {
-          // Sim's baseVal: 0=top(cool) to 1=bottom(hot).
-          // Map to the local physical range within the global colormap.
+        if (isVelocity && fieldData.is2D) {
+          // Velocity: map sim value directly to [0,1] using sim's own range
+          const vRange = gMax - gMin || 1;
+          t = (val - gMin) / vRange;
+        } else if (fieldData.is2D) {
+          // T and other 2D fields: map to local physical range
           t = localTmin + (localTmax - localTmin) * baseVal;
         } else if (useLog && baseVal > 0) {
           t = (Math.log10(baseVal) - gMin) / gRange;
@@ -578,19 +598,17 @@ export class PatchRenderer {
     ctx.lineWidth = 0.5;
     ctx.strokeRect(barX, barY, barW, barH);
 
-    // Compute physical value range at this depth
+    // Compute value range for labels
     let valMax = '', valMin = '';
-    if (this.depthInfo && this.model) {
+    if (this.activeField === 'velocity' && this.sim) {
+      // Velocity: show "relative" since sim units aren't physical
+      valMax = 'max';
+      valMin = '0';
+    } else if (this.depthInfo && this.model) {
       const gr = this._globalRange && this._globalRange[this.activeField];
       if (gr) {
-        if (this.activeField === 'velocity') {
-          valMax = this._fmtVal(gr.max) + ' ' + (info.unit || '');
-          valMin = '0 ' + (info.unit || '');
-        } else {
-          // Log scale: show 10^max and 10^min
-          valMax = this._fmtVal(Math.pow(10, gr.max)) + ' ' + (info.unit || '');
-          valMin = this._fmtVal(Math.pow(10, gr.min)) + ' ' + (info.unit || '');
-        }
+        valMax = this._fmtVal(Math.pow(10, gr.max)) + ' ' + (info.unit || '');
+        valMin = this._fmtVal(Math.pow(10, gr.min)) + ' ' + (info.unit || '');
       }
     }
 
