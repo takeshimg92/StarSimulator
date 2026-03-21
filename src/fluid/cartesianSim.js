@@ -98,18 +98,22 @@ export class CartesianSim {
       const T_base = this.T_bot - dT * frac;
 
       for (let i = 0; i < Nx; i++) {
-        // ±10% noise + multi-mode sinusoidal perturbation
-        const noise = (Math.random() - 0.5) * 0.2 * dT;
-        const mode1 = 0.05 * dT * Math.sin(2 * Math.PI * i / Nx * 3) * Math.sin(Math.PI * frac);
-        const mode2 = 0.03 * dT * Math.sin(2 * Math.PI * i / Nx * 7 + 1.3) * Math.sin(2 * Math.PI * frac);
-        this.set(this.T, i, j, T_base + noise + mode1 + mode2);
+        // Smooth multi-mode perturbation (no white noise)
+        // Modes at different scales seed convection cells of various sizes
+        const mode1 = 0.04 * dT * Math.sin(2 * Math.PI * i / Nx * 3) * Math.sin(Math.PI * frac);
+        const mode2 = 0.02 * dT * Math.sin(2 * Math.PI * i / Nx * 6 + 1.3) * Math.sin(2 * Math.PI * frac);
+        const mode3 = 0.01 * dT * Math.sin(2 * Math.PI * i / Nx * 11 + 2.7) * Math.sin(3 * Math.PI * frac);
+        this.set(this.T, i, j, T_base + mode1 + mode2 + mode3);
       }
     }
 
-    // Larger random velocity seed to kick-start circulation
-    for (let k = 0; k < this.size; k++) {
-      this.vx[k] = (Math.random() - 0.5) * 0.05;
-      this.vy[k] = (Math.random() - 0.5) * 0.05;
+    // Small smooth velocity seed
+    for (let j = 0; j < Ny; j++) {
+      for (let i = 0; i < Nx; i++) {
+        const k = this.idx(i, j);
+        this.vx[k] = 0.02 * Math.sin(2 * Math.PI * i / Nx * 4) * Math.sin(Math.PI * j / Ny);
+        this.vy[k] = 0.02 * Math.cos(2 * Math.PI * i / Nx * 4) * Math.sin(Math.PI * j / Ny);
+      }
     }
   }
 
@@ -301,22 +305,56 @@ export class CartesianSim {
     }
   }
 
+  /**
+   * Subgrid turbulent forcing with spatially-correlated noise.
+   *
+   * Instead of pixel-level white noise, injects smooth "thermal blobs"
+   * at the scale of ~4 grid cells (matching convective eddy sizes).
+   * Amplitudes are ~1% of ΔT for temperature and ~1% of max velocity,
+   * consistent with observed solar convection fluctuations.
+   *
+   * Each frame, a few random blobs are placed; they overlap and
+   * accumulate to create a spatially-smooth perturbation field.
+   */
   _addTurbulentNoise(dt) {
     const { Nx, Ny } = this;
     const maxV = this.maxVelocity() || 0.01;
     const dT = Math.abs(this.T_bot - this.T_top) || 1;
 
-    // Velocity noise: ~2% of max velocity
-    const vNoiseAmp = maxV * 0.02;
-    // Temperature noise: ~1% of ΔT (drives buoyancy fluctuations)
-    const tNoiseAmp = dT * 0.01;
+    // Number of blobs per frame (fewer = smoother, more = noisier)
+    const nBlobs = 6;
+    // Blob radius in grid cells (~convective eddy scale)
+    const blobR = 4;
+    const blobR2 = blobR * blobR;
 
-    for (let j = 2; j < Ny - 2; j++) {
-      for (let i = 0; i < Nx; i++) {
-        const k = this.idx(i, j);
-        this.vx[k] += (Math.random() - 0.5) * 2 * vNoiseAmp;
-        this.vy[k] += (Math.random() - 0.5) * 2 * vNoiseAmp;
-        this.T[k] += (Math.random() - 0.5) * 2 * tNoiseAmp;
+    const tAmp = dT * 0.008;  // ~1% of ΔT per blob
+    const vAmp = maxV * 0.008;
+
+    for (let b = 0; b < nBlobs; b++) {
+      // Random blob center (interior only)
+      const cx = Math.random() * Nx;
+      const cy = 2 + Math.random() * (Ny - 4);
+      // Random sign: hot blob (+) or cool blob (-)
+      const sign = Math.random() > 0.5 ? 1 : -1;
+
+      // Apply Gaussian-weighted perturbation around center
+      const iMin = Math.max(0, Math.floor(cx - blobR * 2));
+      const iMax = Math.min(Nx - 1, Math.ceil(cx + blobR * 2));
+      const jMin = Math.max(2, Math.floor(cy - blobR * 2));
+      const jMax = Math.min(Ny - 3, Math.ceil(cy + blobR * 2));
+
+      for (let j = jMin; j <= jMax; j++) {
+        for (let i = iMin; i <= iMax; i++) {
+          const dx = i - cx;
+          const dy = j - cy;
+          const r2 = dx * dx + dy * dy;
+          const w = Math.exp(-r2 / (2 * blobR2)); // Gaussian weight
+
+          const k = this.idx(i, j);
+          this.T[k] += sign * tAmp * w;
+          this.vx[k] += (Math.random() - 0.5) * vAmp * w;
+          this.vy[k] += sign * vAmp * w * 0.5; // bias vertical: hot rises, cool sinks
+        }
       }
     }
   }
