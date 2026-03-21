@@ -92,13 +92,13 @@ In the simulator, you can toggle the slice view to show the convective and radia
   },
   {
     title: 'Nuclear Fusion: PP Chain vs. CNO Cycle',
-    body: `Main-sequence stars fuse hydrogen into helium via two pathways. The <b>proton-proton (PP) chain</b> fuses protons directly, while the <b>CNO cycle</b> uses carbon, nitrogen, and oxygen as catalysts. Their rates depend very differently on temperature:`,
-    equation: String.raw`\varepsilon_{\text{PP}} \propto \rho\,X^2\,T^4, \qquad \varepsilon_{\text{CNO}} \propto \rho\,X\,X_{\text{CNO}}\,T^{16}`,
-    after: `where $X$ is the hydrogen mass fraction and $X_{CNO}$ is the mass fraction of CNO elements. The CNO cycle's steep $T^{16}$ dependence means it completely dominates at high temperatures, while the gentler PP chain wins at lower temperatures. The crossover occurs at roughly $T \\approx 17$ million K.
-
-For the Sun ($T_c \\approx 15$ MK), the PP chain produces $\\sim$98% of the energy. Stars more massive than $\\sim 1.3\\,M_\\odot$ have hotter cores where the CNO cycle takes over.
-
-The CNO cycle's extreme temperature sensitivity concentrates energy generation in a tiny central region, creating a steep temperature gradient that drives <b>convective cores</b> in massive stars.`,
+    body: `Main-sequence stars fuse hydrogen into helium via two pathways. The <b>proton-proton (PP) chain</b> fuses protons directly, while the <b>CNO cycle</b> uses carbon, nitrogen, and oxygen as catalysts. Their rates have a common structure dictated by the Gamow peak — a $T^{-2/3} \\exp(-\\tau/T^{1/3})$ dependence that captures the interplay between the Maxwell-Boltzmann tail and the quantum tunnelling probability:`,
+    equation: String.raw`\varepsilon_{\text{PP}} = C_{\text{PP}}\,\rho\,X^2\,T_9^{-2/3}\,\exp\!\left(\frac{-3.381}{T_9^{1/3}}\right)`,
+    after: ``,
+    equation2: String.raw`\varepsilon_{\text{CNO}} = C_{\text{CNO}}\,\rho\,X\,X_{\text{CNO}}\,T_9^{-2/3}\,\exp\!\left(\frac{-15.231}{T_9^{1/3}}\right)`,
+    after2: `where $T_9 = T / 10^9$ K. The much larger Gamow energy in the CNO exponent (15.231 vs. 3.381) reflects the higher Coulomb barrier for carbon and nitrogen nuclei, making CNO extremely temperature-sensitive. Near $T \\approx 15$ MK, local power-law fits give $\\varepsilon_{\\text{PP}} \\propto T^4$ and $\\varepsilon_{\\text{CNO}} \\propto T^{16}$, but these exponents change with temperature — the full Gamow forms above are valid across the entire main-sequence mass range.
+<br><br>
+The crossover occurs at roughly $T \\approx 17$–$18$ MK. For the Sun ($T_c \\approx 15$ MK), the PP chain produces $\\sim$98% of the energy. Stars more massive than $\\sim 1.3\\,M_\\odot$ have hotter cores where the CNO cycle takes over, concentrating energy generation in a tiny central region and driving <b>convective cores</b>.`,
     refs: [
       { text: 'Wikipedia: Proton-proton chain', url: 'https://en.wikipedia.org/wiki/Proton%E2%80%93proton_chain' },
       { text: 'Wikipedia: CNO cycle', url: 'https://en.wikipedia.org/wiki/CNO_cycle' },
@@ -134,6 +134,65 @@ For hydrogen ($\\chi = 13.6$ eV), the core is fully ionized. But in the outer en
 The ionization energy of hydrogen ultimately determines why stars below $\\sim$1.3 $M_\\odot$ have convective envelopes and more massive stars do not.`,
     refs: [
       { text: 'Wikipedia: Saha ionization equation', url: 'https://en.wikipedia.org/wiki/Saha_ionization_equation' },
+    ],
+  },
+  {
+    title: 'Opacity: What Makes Stars Opaque',
+    body: `The opacity $\\kappa$ measures how effectively stellar material blocks radiation. Three sources dominate at different temperatures:
+<br><br>
+<b>Kramers' opacity</b> (free-free + bound-free absorption, $T \\sim 10^5$–$10^7$ K): photons are absorbed by free electrons passing near ions, or by ionizing bound electrons. The rate drops steeply with temperature because hotter photons are harder to absorb:`,
+    equation: String.raw`\kappa_K = 3.68 \times 10^{22}\;\rho\,T^{-3.5}\,(1+X)(Z+0.001) \quad [\text{cm}^2/\text{g}]`,
+    after: `<b>H$^-$ opacity</b> ($T \\sim 3{,}000$–$12{,}000$ K): a neutral hydrogen atom can loosely bind a second electron, forming an H$^-$ ion. This fragile ion absorbs visible and infrared photons very efficiently. Unlike Kramers' opacity, H$^-$ <i>increases</i> with temperature (more free electrons available to form H$^-$):`,
+    equation2: String.raw`\kappa_{H^-} \approx 2.5 \times 10^{-31}\;\frac{Z}{0.02}\;\rho^{1/2}\;T^{9} \quad [\text{cm}^2/\text{g}]`,
+    after2: `This steep $T^9$ dependence creates an opacity bump around $10^4$ K that is the primary driver of convective envelopes in solar-type stars.
+<br><br>
+<b>Electron scattering</b> ($T > 10^7$ K): Thomson scattering off free electrons, independent of temperature: $\\kappa_{\\text{es}} = 0.2(1+X)$ cm$^2$/g. Dominates in hot stellar cores.`,
+    refs: [
+      { text: 'Wikipedia: Kramers\' opacity law', url: 'https://en.wikipedia.org/wiki/Kramers%27_opacity_law' },
+      { text: 'Wikipedia: H-minus opacity', url: 'https://en.wikipedia.org/wiki/H-minus_opacity' },
+    ],
+  },
+  {
+    title: 'The Schwarzschild Criterion',
+    body: `Whether energy is transported by radiation or convection depends on a single comparison. The <b>radiative temperature gradient</b> — the gradient that would exist if all energy were carried by radiation — is:`,
+    equation: String.raw`\nabla_{\text{rad}} = \frac{3\,\kappa\,P\,L(r)}{16\pi\,a\,c\,T^4\,G\,m(r)}`,
+    after: `where $a = 4\\sigma/c$ is the radiation constant. If this gradient exceeds the <b>adiabatic gradient</b> $\\nabla_{\\text{ad}} = 0.4$ (for an ideal gas with $\\gamma = 5/3$), radiation cannot carry the flux — convection takes over:`,
+    equation2: String.raw`\nabla_{\text{rad}} > \nabla_{\text{ad}} \implies \text{convective}`,
+    after2: `This criterion naturally explains the zone structure of different stars:
+<ul>
+<li><b>Low-mass stars</b> ($M < 1.3\\,M_\\odot$): H$^-$ opacity creates high $\\kappa$ in the cool envelope → large $\\nabla_{\\text{rad}}$ → convective envelopes.</li>
+<li><b>Massive stars</b> ($M > 1.3\\,M_\\odot$): CNO cycle concentrates $L(r)$ in a tiny core → large $\\nabla_{\\text{rad}}$ near center → convective cores.</li>
+<li><b>Very low-mass</b> ($M < 0.35\\,M_\\odot$): opacity is high throughout → fully convective.</li>
+</ul>
+In the Interior tab, the dashed boundary lines on the heatmap are computed from this criterion — they are not placed by hand.`,
+    refs: [
+      { text: 'Wikipedia: Schwarzschild criterion', url: 'https://en.wikipedia.org/wiki/Schwarzschild_criterion' },
+    ],
+  },
+  {
+    title: 'Convective Velocity: Mixing-Length Theory',
+    body: `In convective zones, how fast does the gas flow? The standard estimate comes from <b>mixing-length theory (MLT)</b>, which models convection as blobs of gas that travel one "mixing length" $\\ell = \\alpha_{\\text{MLT}} H_P$ before dissolving:`,
+    equation: String.raw`v_{\text{conv}} \approx \left(\frac{L_{\text{conv}}}{4\pi r^2 \rho}\right)^{1/3} \left(\alpha_{\text{MLT}}\,H_P\right)^{1/3}`,
+    after: `where $H_P = P/(\\rho g)$ is the pressure scale height and $\\alpha_{\\text{MLT}} \\approx 1.6$. For the solar convection zone, this gives velocities of $\\sim$100 m/s near the surface — consistent with observed granulation motions.
+<br><br>
+In the Interior tab, this velocity drives the speed of the animated convection cells in the 2D fluid simulation.`,
+    refs: [
+      { text: 'Wikipedia: Mixing length theory', url: 'https://en.wikipedia.org/wiki/Mixing_length_theory' },
+    ],
+  },
+  {
+    title: 'Quasi-Static Validity',
+    body: `The interior structure equations assume time-independent equilibrium. This is justified because three very different timescales govern stellar evolution:
+<ul>
+<li><b>Dynamical</b> (free-fall): $t_{\\text{dyn}} \\sim 1/\\sqrt{G\\bar{\\rho}} \\sim 30$ minutes for the Sun. The star adjusts its hydrostatic balance this fast.</li>
+<li><b>Thermal</b> (Kelvin-Helmholtz): $t_{\\text{KH}} \\sim GM^2/(RL) \\sim 10^7$ years. How long to radiate away gravitational energy.</li>
+<li><b>Nuclear</b>: $t_{\\text{nuc}} \\sim Mc^2 X\\eta / L \\sim 10^{10}$ years. How long the fuel lasts.</li>
+</ul>
+Since $t_{\\text{dyn}} \\ll t_{\\text{KH}} \\ll t_{\\text{nuc}}$, the star is always in near-perfect mechanical and thermal equilibrium during main-sequence evolution. Composition changes (H→He) happen so slowly that the star continuously adjusts — a sequence of quasi-static equilibrium models. This is exactly how professional stellar evolution codes (MESA, for example) work.
+<br><br>
+The approximation breaks down only during violent events (helium flash, core collapse) or rapid post-MS phases — which are outside the scope of the Interior heatmap view.`,
+    refs: [
+      { text: 'Padmanabhan — Theoretical Astrophysics Vol. II, Ch. 2', url: 'https://doi.org/10.1017/CBO9780511840159' },
     ],
   },
   {

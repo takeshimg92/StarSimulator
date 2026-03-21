@@ -66,6 +66,23 @@
       </div>
     </main>
 
+    <!-- Interior heatmap: floating in viewport, bottom-left, visible when slice is on -->
+    <div id="interior-float" style="display: none;">
+      <div id="interior-float-header">
+        <span>Interior</span>
+        <div id="interior-field-toggle">
+          <button class="field-btn active" data-field="temperature" title="Temperature">T</button>
+          <button class="field-btn" data-field="density" title="Density">&rho;</button>
+          <button class="field-btn" data-field="pressure" title="Pressure">P</button>
+          <button class="field-btn" data-field="energy" title="Energy Generation">&epsilon;</button>
+          <button class="field-btn" data-field="velocity" title="Convective Velocity">v</button>
+        </div>
+      </div>
+      <canvas id="interior-canvas"></canvas>
+      <div id="interior-field-name"></div>
+      <div id="interior-resize-grip"></div>
+    </div>
+
     <!-- Info overlay: bottom-left of viewport -->
     <!-- Scale bar: bottom-left of viewport -->
     <div id="scale-bar">

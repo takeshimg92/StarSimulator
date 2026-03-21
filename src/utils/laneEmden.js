@@ -28,9 +28,12 @@ export function solveLaneEmden(n, numSteps = 1000) {
 
     // Handle singularity at ξ=0: use L'Hôpital limit (2/ξ)φ → 2φ'/1
     // At ξ=0, the equation gives dφ/dξ = -1/3 (for the initial step)
+    // For non-integer n (e.g. n=1.5), Math.pow(negative, n) = NaN.
+    // Clamp θ ≥ 0 inside the RHS since θ < 0 is unphysical.
+    const thetaN = (t_val) => Math.pow(Math.max(t_val, 0), n);
     const f = (xi_val, t_val, dt_val) => {
-      if (xi_val < 1e-10) return -(t_val ** n) / 3;
-      return -(t_val ** n) - (2 / xi_val) * dt_val;
+      if (xi_val < 1e-10) return -thetaN(t_val) / 3;
+      return -thetaN(t_val) - (2 / xi_val) * dt_val;
     };
 
     // RK4

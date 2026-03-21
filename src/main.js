@@ -1,4 +1,4 @@
-import { initRenderer, updateStarAppearance, setSunglasses, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup, getScaleBarInfo, setOnFrameCallback, triggerEndOfLife, getZoneStructure, getRemnantType, setSpotActivity, setGranulationScale, setLightMode } from './star/renderer.js';
+import { initRenderer, updateStarAppearance, setSunglasses, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup, getScaleBarInfo, setOnFrameCallback, triggerEndOfLife, getZoneStructure, getRemnantType, setSpotActivity, setGranulationScale, setLightMode, setSchwarzschildZones } from './star/renderer.js';
 import { computeProfiles } from './physics/stellar.js';
 import { constants } from './physics/constants.js';
 import { createSliders } from './ui/sliders.js';
@@ -9,6 +9,10 @@ import { initEquationDisplay } from './ui/equations.js';
 import { initImplementationPanel } from './ui/implementation.js';
 import * as evolution from './physics/evolution.js';
 import { loadTracks } from './physics/mistTracks.js';
+import { computeInteriorModel } from './physics/interiorModel.js';
+import { ConvectionSim } from './fluid/convectionSim.js';
+import { WedgeRenderer } from './interior/wedgeRenderer.js';
+import { FIELD_INFO } from './interior/colormaps.js';
 import * as THREE from 'three';
 import 'katex/dist/katex.min.css';
 
@@ -18,6 +22,13 @@ let lastFrameTime = 0;
 let lastCompositionUpdate = 0;
 const COMPOSITION_UPDATE_INTERVAL = 2000;
 let lastProfiles = null; // cached for hover tooltip
+
+// Interior cross-section state
+let heatmapRenderer = null;
+let convectionSim = null;
+let interiorModel = null;
+let interiorActive = false;
+let lastInteriorMass = null;
 
 let suppressHydrogenSync = false;
 
@@ -88,6 +99,15 @@ function onParametersChanged({ mass, radius, temperature, hydrogen }, { wobble =
     Yc: comp.Y_core,
   });
   evolution.setLuminosity(profiles.L);
+
+  // Compute Schwarzschild zones for the 3D slice view
+  // (lightweight — reuses cached Lane-Emden solution)
+  const im = computeInteriorModel(mass);
+  setSchwarzschildZones({
+    zoneBoundaries: im.zoneBoundaries,
+    coreConvective: im.coreConvective,
+  });
+
   updateStarAppearance(temperature, radius, profiles.L, { wobble });
 
   updateParticleTemp(profiles.Tc);
@@ -462,6 +482,283 @@ function timeEvolutionLoop(now) {
   }
 }
 
+function initInteriorPanel() {
+  const canvas = document.getElementById('interior-canvas');
+  if (!canvas) return;
+
+  heatmapRenderer = new WedgeRenderer(canvas, 512);
+
+  // Field toggle buttons
+  const buttons = document.querySelectorAll('#interior-field-toggle .field-btn');
+  const fieldNameEl = document.getElementById('interior-field-name');
+
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const field = btn.dataset.field;
+      heatmapRenderer.setField(field);
+      if (fieldNameEl) {
+        fieldNameEl.textContent = (FIELD_INFO[field] || {}).name || field;
+      }
+    });
+  });
+
+  // --- Draggable + resizable panel ---
+  const panel = document.getElementById('interior-float');
+  const header = document.getElementById('interior-float-header');
+  const grip = document.getElementById('interior-resize-grip');
+  if (!panel || !header || !grip) return;
+
+  let dragging = false, resizing = false;
+  let dragStartX, dragStartY, panelStartX, panelStartY;
+  let resizeStartX, resizeStartW;
+
+  // Convert initial bottom/left positioning to top/left so drag is simple
+  function ensureTopLeft() {
+    if (panel.style.top) return; // already converted
+    const rect = panel.getBoundingClientRect();
+    panel.style.top = rect.top + 'px';
+    panel.style.left = rect.left + 'px';
+    panel.style.bottom = 'auto';
+  }
+
+  // Drag via header
+  header.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.field-btn')) return; // don't drag when clicking buttons
+    ensureTopLeft();
+    dragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    panelStartX = panel.offsetLeft;
+    panelStartY = panel.offsetTop;
+    header.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  header.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    panel.style.left = (panelStartX + e.clientX - dragStartX) + 'px';
+    panel.style.top = (panelStartY + e.clientY - dragStartY) + 'px';
+  });
+
+  header.addEventListener('pointerup', () => { dragging = false; });
+  header.addEventListener('pointercancel', () => { dragging = false; });
+
+  // Resize via grip (width only; height follows via aspect-ratio on canvas)
+  grip.addEventListener('pointerdown', (e) => {
+    ensureTopLeft();
+    resizing = true;
+    resizeStartX = e.clientX;
+    resizeStartW = panel.offsetWidth;
+    grip.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  grip.addEventListener('pointermove', (e) => {
+    if (!resizing) return;
+    const newW = Math.max(180, resizeStartW + e.clientX - resizeStartX);
+    panel.style.width = newW + 'px';
+  });
+
+  grip.addEventListener('pointerup', () => { resizing = false; });
+  grip.addEventListener('pointercancel', () => { resizing = false; });
+}
+
+function setInteriorActive(active) {
+  interiorActive = active;
+  const panel = document.getElementById('interior-float');
+  if (panel) {
+    panel.style.display = active ? '' : 'none';
+  }
+  if (active) {
+    lastInteriorMass = null; // force recompute
+    if (sliderControls) {
+      updateInterior(sliderControls.getValues().mass);
+    }
+  }
+}
+
+/**
+ * Interpolate a 1D model profile onto the sim grid.
+ * @param {number[]} modelR - model r/R array
+ * @param {number[]} modelVal - model values
+ * @param {number} Nr - sim grid rows
+ * @param {number} rInner - sim inner radius (r/R)
+ * @param {number} rOuter - sim outer radius (r/R)
+ * @returns {Float64Array}
+ */
+function interpToSimGrid(modelR, modelVal, Nr, rInner, rOuter) {
+  const arr = new Float64Array(Nr);
+  const dr = (rOuter - rInner) / Nr;
+  for (let i = 0; i < Nr; i++) {
+    const rFrac = rInner + (i + 0.5) * dr;
+    // Binary search
+    let lo = 0, hi = modelR.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (modelR[mid] <= rFrac) lo = mid; else hi = mid;
+    }
+    if (rFrac <= modelR[0]) { arr[i] = modelVal[0]; continue; }
+    if (rFrac >= modelR[modelR.length - 1]) { arr[i] = modelVal[modelVal.length - 1]; continue; }
+    const f = (rFrac - modelR[lo]) / (modelR[hi] - modelR[lo]);
+    arr[i] = modelVal[lo] + f * (modelVal[hi] - modelVal[lo]);
+  }
+  return arr;
+}
+
+/**
+ * Build all sim profiles from the 1D interior model.
+ * Returns { gravity, thermalDiff, viscosity, T_profile, v_conv_seed } as Float64Arrays.
+ */
+function buildSimProfiles(model, Nr, rInner, rOuter) {
+  const { G, R_sun } = constants;
+  const R = model.radius * R_sun;
+
+  // --- Gravity: g(r) = G·m(r)/r² ---
+  const mEncInterp = interpToSimGrid(model.rFrac, model.mEnclosed, Nr, rInner, rOuter);
+  const gravity = new Float64Array(Nr);
+  const dr = (rOuter - rInner) / Nr;
+  for (let i = 0; i < Nr; i++) {
+    const rPhys = (rInner + (i + 0.5) * dr) * R;
+    gravity[i] = rPhys > 0 ? G * mEncInterp[i] / (rPhys * rPhys) : 0;
+  }
+  // Normalize so peak = 10 (sim units)
+  let gMax = 0;
+  for (let i = 0; i < Nr; i++) if (gravity[i] > gMax) gMax = gravity[i];
+  if (gMax > 0) for (let i = 0; i < Nr; i++) gravity[i] *= 10 / gMax;
+
+  // --- Thermal diffusivity: κ_th(r) = 16σT³ / (3κρ²cₚ) ---
+  //
+  // Computed directly from the 1D model's physical quantities.
+  // Where opacity κ is low (radiative zone): κ_th is high → heat
+  // diffuses efficiently → no convection.
+  // Where opacity κ is high (convective zone): κ_th is low → heat
+  // is trapped → convection develops naturally.
+  //
+  const { sigma: sig, k_B, m_p } = constants;
+  const kappaInterp = interpToSimGrid(model.rFrac, model.kappa, Nr, rInner, rOuter);
+  const rhoInterp = interpToSimGrid(model.rFrac, model.rho, Nr, rInner, rOuter);
+  const TInterp = interpToSimGrid(model.rFrac, model.T, Nr, rInner, rOuter);
+
+  const thermalDiffPhys = new Float64Array(Nr);
+  const cp = 5 * k_B / (2 * model.mu * m_p); // cₚ for ideal monatomic gas
+
+  for (let i = 0; i < Nr; i++) {
+    const T3 = TInterp[i] * TInterp[i] * TInterp[i];
+    const denom = 3 * kappaInterp[i] * rhoInterp[i] * rhoInterp[i] * cp;
+    thermalDiffPhys[i] = denom > 0 ? (16 * sig * T3) / denom : 1e-10;
+  }
+
+  // Normalize to sim units: scale so the profile spans a usable range.
+  // The ratio between max (radiative) and min (convective) κ_th is
+  // preserved — this IS the physics that determines whether convection
+  // develops or not.
+  let kthMax = 0, kthMin = Infinity;
+  for (let i = 0; i < Nr; i++) {
+    if (thermalDiffPhys[i] > kthMax) kthMax = thermalDiffPhys[i];
+    if (thermalDiffPhys[i] > 0 && thermalDiffPhys[i] < kthMin) kthMin = thermalDiffPhys[i];
+  }
+  // Scale so max κ_th = 1.0 (sim units)
+  const thermalDiff = new Float64Array(Nr);
+  const kthScale = kthMax > 0 ? 1.0 / kthMax : 1;
+  for (let i = 0; i < Nr; i++) {
+    thermalDiff[i] = Math.max(1e-6, thermalDiffPhys[i] * kthScale);
+  }
+
+  // --- Viscosity: uniform ---
+  const viscosity = new Float64Array(Nr).fill(0.005);
+
+  // --- Temperature profile: conduction equilibrium ---
+  // Solve d/dr(r · κ_th(r) · dT/dr) = 0 with T(rInner)=1, T(rOuter)=0.
+  // This is the temperature profile that the radiative zone naturally
+  // maintains. Perturbations from this profile drive buoyancy.
+  // In convective zones (low κ_th), perturbations persist and grow.
+  // In radiative zones (high κ_th), perturbations are quickly diffused back.
+  //
+  // Integration: dT/dr = C / (r · κ_th(r))
+  //   T(r) = 1 - (integral from rInner to r) / (integral from rInner to rOuter)
+  const integral = new Float64Array(Nr);
+  integral[0] = 0;
+  for (let i = 1; i < Nr; i++) {
+    const r = rInner + (i - 0.5) * dr;
+    const kth = thermalDiff[i - 1] || 0.01;
+    integral[i] = integral[i - 1] + dr / (r * kth);
+  }
+  const totalIntegral = integral[Nr - 1] || 1;
+  const T_profile = new Float64Array(Nr);
+  for (let i = 0; i < Nr; i++) {
+    T_profile[i] = 1.0 - integral[i] / totalIntegral;
+  }
+
+  // --- MLT velocity seed ---
+  const v_raw = interpToSimGrid(model.rFrac, model.v_conv, Nr, rInner, rOuter);
+  let vMax = 0;
+  for (let i = 0; i < Nr; i++) if (v_raw[i] > vMax) vMax = v_raw[i];
+  const v_conv_seed = new Float64Array(Nr);
+  if (vMax > 0) for (let i = 0; i < Nr; i++) v_conv_seed[i] = v_raw[i] / vMax;
+
+  return { gravity, thermalDiff, viscosity, T_profile, v_conv_seed };
+}
+
+function updateInterior(mass) {
+  if (!heatmapRenderer) return;
+  if (!interiorActive) return;
+
+  // Recompute interior model if mass changed
+  if (mass !== lastInteriorMass) {
+    lastInteriorMass = mass;
+    interiorModel = computeInteriorModel(mass);
+    heatmapRenderer.setModel(interiorModel);
+
+    // Sync Schwarzschild zones to 3D slice view
+    setSchwarzschildZones({
+      zoneBoundaries: interiorModel.zoneBoundaries,
+      coreConvective: interiorModel.coreConvective,
+    });
+
+    // Domain from mid-star to surface — concentrates grid resolution
+    // in the convective zone while still showing the radiative interior
+    const Nr = 160, Ntheta = 64;
+    const rInner = 0.5;
+    const rOuter = 0.99;
+
+    // Build all profiles from the 1D physics model
+    const profiles = buildSimProfiles(interiorModel, Nr, rInner, rOuter);
+
+    const simOpts = {
+      Nr, Ntheta,
+      rInner, rOuter,
+      T_inner: 1.0,  // normalized: 1 = core temp, 0 = surface temp
+      T_outer: 0.0,
+      gravity: profiles.gravity,
+      alpha: 1.0,
+      viscosity: profiles.viscosity,
+      thermalDiff: profiles.thermalDiff,
+      T_profile: profiles.T_profile,
+      v_conv_seed: profiles.v_conv_seed,
+    };
+
+    if (!convectionSim) {
+      convectionSim = new ConvectionSim(simOpts);
+    } else {
+      convectionSim.reset(simOpts);
+    }
+
+    // Fast-forward to develop convection cells
+    convectionSim.fastForward(100, 0.015);
+    heatmapRenderer.setConvectionSim(convectionSim);
+  }
+
+  // Step the simulation (decoupled from render — step at lower rate)
+  if (convectionSim) {
+    convectionSim.step(0.015);
+  }
+
+  // Render
+  heatmapRenderer.render(performance.now() / 1000);
+}
+
 async function init() {
   // Load MIST tracks in background (non-blocking — app works without them)
   loadTracks().then(() => {
@@ -501,6 +798,9 @@ async function init() {
   const implPanel = document.getElementById('implementation-panel');
   initImplementationPanel(implPanel);
 
+  // Interior cross-section panel
+  initInteriorPanel();
+
   // Tabs + expand buttons
   initTabs();
   initExpandButtons();
@@ -518,6 +818,7 @@ async function init() {
   });
   document.getElementById('slice-toggle').addEventListener('change', (e) => {
     setSliceView(e.target.checked);
+    setInteriorActive(e.target.checked);
   });
 
   // Reset button — force true reload (bypass mobile bfcache)
@@ -543,6 +844,15 @@ async function init() {
   // Start time evolution loop
   lastFrameTime = performance.now();
   requestAnimationFrame(timeEvolutionLoop);
+
+  // Interior heatmap render loop (runs when interior tab is active)
+  function interiorRenderLoop() {
+    requestAnimationFrame(interiorRenderLoop);
+    if (interiorActive && sliderControls) {
+      updateInterior(sliderControls.getValues().mass);
+    }
+  }
+  requestAnimationFrame(interiorRenderLoop);
 
   // Resize handling — canvas resize functions skip when tab is hidden (0×0),
   // so a deferred resize is triggered when switching back to the star tab.

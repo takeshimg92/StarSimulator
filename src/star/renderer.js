@@ -694,7 +694,23 @@ function addRandomStarfield() {
  * Returns { coreR, convInner, convOuter, coreConvective, shells, coreColor }
  */
 function getZoneStructure(mass, evoState) {
-  // Fallback: mass-only (static mode, no MIST data)
+  // Use Schwarzschild-derived boundaries when available (static mode or MS phase)
+  if (csSchwarzschildZones) {
+    const sz = csSchwarzschildZones;
+    const isMS = !evoState || evoState.phase === undefined || evoState.phase <= 0;
+    if (isMS) {
+      return {
+        coreR: sz.coreConvective ? (sz.zoneBoundaries[0] || 0.15) : 0.08,
+        convInner: sz.coreConvective ? 0 : (sz.zoneBoundaries[0] || 0.9),
+        convOuter: sz.coreConvective ? (sz.zoneBoundaries[0] || 0.15) : 1.0,
+        coreConvective: sz.coreConvective,
+        shells: [],
+        coreColor: { r: 1, g: 1, b: 0.94 },
+      };
+    }
+  }
+
+  // Fallback: mass-only (static mode, no MIST data, no Schwarzschild)
   if (!evoState || evoState.phase === undefined) {
     if (mass >= 1.3) {
       const coreConvR = Math.min(0.5, 0.2 + 0.1 * (mass - 1.3));
@@ -1088,6 +1104,13 @@ function drawCrossSection(time) {
 
 export { getZoneStructure };
 export function getRemnantType() { return remnantType; }
+
+// Override zone boundaries with physics-derived Schwarzschild values
+let csSchwarzschildZones = null;
+
+export function setSchwarzschildZones(zones) {
+  csSchwarzschildZones = zones;
+}
 
 export function setCrossSectionProfiles(profiles, mass, evolutionState) {
   csProfiles = profiles;

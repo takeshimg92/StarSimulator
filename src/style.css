@@ -1346,3 +1346,94 @@ input[type="range"]::-moz-range-thumb {
     white-space: normal;
   }
 }
+
+/* =====================================================
+   Interior Cross-Section — Floating Panel
+   ===================================================== */
+
+#interior-float {
+  position: absolute;
+  bottom: 120px;
+  left: 232px;
+  width: 354px;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 6px;
+  /* prevent text selection while dragging */
+  user-select: none;
+}
+
+#interior-float-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 4px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: grab;
+}
+
+#interior-float-header:active {
+  cursor: grabbing;
+}
+
+#interior-float-header > span {
+  margin-right: auto;
+}
+
+#interior-field-toggle {
+  display: flex;
+  gap: 2px;
+}
+
+.field-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  font-family: 'Inter', system-ui, sans-serif;
+  padding: 2px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.field-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.field-btn.active {
+  background: rgba(255, 200, 80, 0.25);
+  border-color: rgba(255, 200, 80, 0.5);
+  color: rgba(255, 220, 120, 0.95);
+}
+
+#interior-float canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 4px;
+}
+
+#interior-resize-grip {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  /* small triangle grip indicator */
+  background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.2) 50%);
+  border-radius: 0 0 8px 0;
+}
+
+#interior-field-name {
+  padding: 2px 4px 0;
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.35);
+  text-align: center;
+}

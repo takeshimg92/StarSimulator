@@ -68,12 +68,70 @@ Luminosity and radius scale with composition:`,
 When MIST tracks are loaded, the time evolution system takes over from this analytical model and drives the star through its full evolutionary track.`,
   },
   {
-    title: 'PP Chain vs CNO Cycle',
-    body: `The tooltip shows the energy generation breakdown when hovering over the core in slice view. The fraction is computed from the ratio of temperature-dependent rates:`,
-    equation: String.raw`\frac{\varepsilon_{\text{CNO}}}{\varepsilon_{\text{PP}}} = 0.02 \times \left(\frac{T_6}{15}\right)^{13}`,
-    after: `where $T_6$ is the temperature in millions of K. This parameterization is calibrated to give PP $\\approx$ 98% at solar core conditions ($T_c = 15$ MK) and crossover around 23 MK, matching detailed nuclear reaction network calculations.
-
-The exponent 13 encodes the difference in temperature sensitivity between the CNO cycle ($T^{16}$) and PP chain ($T^4$), plus corrections for the composition-dependent prefactors.`,
+    title: 'Energy Generation: Gamow Peak Forms',
+    body: `The interior model computes nuclear energy generation using the full <b>Gamow peak</b> forms rather than local power-law approximations. This is critical because the effective temperature exponent ($\\nu = \\partial \\ln \\varepsilon / \\partial \\ln T$) varies significantly with stellar mass:`,
+    equation: String.raw`\varepsilon_{\text{PP}} = 2.57 \times 10^{-3}\;\rho\,X^2\,T_9^{-2/3}\,e^{-3.381/T_9^{1/3}} \;\; [\text{W/kg}]`,
+    after: ``,
+    equation2: String.raw`\varepsilon_{\text{CNO}} = 8.24 \times 10^{18}\;\rho\,X\,X_{\text{CNO}}\,T_9^{-2/3}\,e^{-15.231/T_9^{1/3}} \;\; [\text{W/kg}]`,
+    after2: `Coefficients from Kippenhahn, Weigert & Weiss (2012), converted from CGS to SI ($\\times 10^{-7}$: $\\rho$ in kg/m$^3$, $\\varepsilon$ in W/kg). The Gamow exponentials correctly reproduce:
+<ul>
+<li>Effective $T^{\\sim 4}$ for PP near 15 MK, rising to $\\sim 6$ near 5 MK</li>
+<li>Effective $T^{\\sim 16}$ for CNO near 15 MK, steepening to $\\sim 27$ at 5 MK</li>
+<li>PP/CNO crossover at $\\sim$17–18 MK</li>
+<li>Exponential suppression at low $T$ (Gamow barrier)</li>
+</ul>
+The luminosity profile $L(r) = \\int_0^r 4\\pi r'^2 \\rho\\,\\varepsilon\\,dr'$ is computed by trapezoidal integration, then normalized so that $L(R) = 4\\pi R^2 \\sigma T_{\\text{eff}}^4$.`,
+    refs: [
+      { text: 'Kippenhahn, Weigert & Weiss — Stellar Structure and Evolution, §18.5', url: 'https://doi.org/10.1007/978-3-642-30304-3' },
+    ],
+  },
+  {
+    title: 'Opacity Model',
+    body: `Three opacity sources are combined additively (the dominant source at each temperature regime determines the total):
+<br><br>
+<b>Kramers' (ff+bf)</b>: $\\kappa_K = 3.68 \\times 10^{18}\\,\\rho\\,T^{-3.5}(1+X)(Z+0.001)$ [m$^2$/kg]. Combined free-free and bound-free with Gaunt factor $g_{\\text{bf}} \\approx 1$. Dominates at $10^5$–$10^7$ K.
+<br><br>
+<b>H$^-$</b>: $\\kappa_{H^-} = 7.91 \\times 10^{-34}\\,(Z/0.02)\\,\\rho^{1/2}\\,T^9$ [m$^2$/kg]. Cut off above 12,000 K (hydrogen ionizes, destroying neutral H needed for H$^-$ formation). This is the key opacity source that drives convective envelopes in solar-type stars.
+<br><br>
+<b>Electron scattering</b>: $\\kappa_{\\text{es}} = 0.02(1+X)$ [m$^2$/kg]. Temperature-independent Thomson scattering. Floor for hot plasma.
+<br><br>
+Total: $\\kappa = \\max(\\kappa_K + \\kappa_{H^-},\\; \\kappa_{\\text{es}})$, capped at $10^5$ m$^2$/kg to prevent numerical overflow at very low $T$.`,
+  },
+  {
+    title: 'Interior Heatmap: Architecture',
+    body: `The Interior tab uses a <b>hybrid 1D + 2D</b> architecture:
+<br><br>
+<b>1D layer</b>: The <code>interiorModel.js</code> orchestrator calls the Lane-Emden solver (using $n = 1.5$ for $M < 0.35\\,M_\\odot$, $n = 3$ otherwise), then computes energy generation, opacity, and the Schwarzschild criterion at each radial grid point. This gives radial profiles of $T$, $\\rho$, $P$, $\\varepsilon$, $\\kappa$, $\\nabla_{\\text{rad}}$, and convective velocity — plus the locations of convective/radiative zone boundaries.
+<br><br>
+<b>2D layer</b>: A <b>Stable Fluids</b> solver (Jos Stam, 1999) runs on a polar grid ($48 \\times 96$ cells) within the largest convective zone. The Boussinesq approximation couples the velocity field to the temperature field via a buoyancy force $\\vec{F} = \\alpha g \\delta T\\,\\hat{r}$. Boundary conditions (fixed temperatures at inner/outer radii) come from the 1D profiles.
+<br><br>
+<b>Rendering</b>: A 512×512 Canvas 2D composites both layers. The base color comes from a 256-entry radial lookup table (1D profile → colormap). In convective zones, the 2D temperature perturbations and velocity field are overlaid. Dashed circles mark zone boundaries. A colorbar shows the value range.`,
+    refs: [
+      { text: 'Stam (1999) — Stable Fluids', url: 'https://doi.org/10.1145/311535.311548' },
+    ],
+  },
+  {
+    title: '2D Fluid Solver: Stable Fluids on Polar Grid',
+    body: `The convection simulation solves the incompressible Navier-Stokes equations with the Boussinesq buoyancy approximation:`,
+    equation: String.raw`\frac{\partial \vec{v}}{\partial t} + (\vec{v}\cdot\nabla)\vec{v} = -\frac{\nabla p}{\rho_0} + \nu\nabla^2\vec{v} + \alpha\,g\,\delta T\,\hat{r}`,
+    after: `coupled with temperature advection-diffusion: $\\partial T/\\partial t + (\\vec{v}\\cdot\\nabla)T = \\kappa_{\\text{th}}\\nabla^2 T$.
+<br><br>
+The Jos Stam algorithm solves this per timestep in four stages:
+<ol>
+<li><b>Add forces:</b> buoyancy $\\alpha g \\delta T$ applied to radial velocity.</li>
+<li><b>Diffuse:</b> implicit viscous/thermal diffusion via Gauss-Seidel iteration.</li>
+<li><b>Project:</b> pressure Poisson equation ($\\nabla^2 p = \\nabla \\cdot \\vec{v}$) solved via Gauss-Seidel with SOR ($\\omega = 1.5$), then $\\vec{v} \\leftarrow \\vec{v} - \\nabla p$.</li>
+<li><b>Advect:</b> semi-Lagrangian backtrace with bilinear interpolation. Unconditionally stable regardless of CFL number.</li>
+</ol>
+The polar grid uses $\\theta$-periodic boundaries and no-slip (zero velocity) at the inner/outer radii. The Laplacian includes the $1/r$ and $1/r^2$ terms for polar coordinates.`,
+  },
+  {
+    title: 'Quasi-Static Assumption',
+    body: `The 1D structure equations assume time-independent equilibrium. This is valid because on the main sequence, the nuclear timescale ($\\sim 10^{10}$ yr) vastly exceeds both the thermal (Kelvin-Helmholtz, $\\sim 10^7$ yr) and dynamical (free-fall, $\\sim 30$ min) timescales.
+<br><br>
+The star adjusts hydrostatically in minutes and thermally in millions of years, so composition changes (H→He over billions of years) are always quasi-static. When the user moves the mass slider, the equilibrium structure is recomputed instantly — physically justified because the adjustment timescale is far below human perception.
+<br><br>
+The 2D convection sim provides the visual dynamism that the static 1D model lacks: convection cells develop, merge, and evolve on the convective overturn timescale (set by the mixing-length velocity), giving the impression of a living stellar interior while the underlying radial structure remains in equilibrium.`,
   },
   {
     title: '3D Rendering',
