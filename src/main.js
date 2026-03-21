@@ -832,6 +832,29 @@ function updateInterior(mass) {
     });
 
     patchRenderer.setModel(interiorModel);
+
+    // Auto-set depth to the most interesting convective region
+    const zb = interiorModel.zoneBoundaries;
+    if (interiorModel.coreConvective && zb.length > 0) {
+      // Massive star: convective core — default to mid-core
+      currentDepthFrac = zb[0] * 0.5;
+    } else if (zb.length > 0) {
+      // Solar-type: convective envelope — default to just inside the boundary
+      currentDepthFrac = Math.min(0.98, zb[zb.length - 1] + 0.02);
+    } else {
+      currentDepthFrac = 0.85;
+    }
+
+    // Sync the slider UI
+    const depthSlider = document.getElementById('interior-depth-slider');
+    const depthLabel = document.getElementById('interior-depth-label');
+    if (depthSlider) {
+      depthSlider.value = Math.round((0.99 - currentDepthFrac) / 0.94 * 100);
+    }
+    if (depthLabel) {
+      depthLabel.textContent = `r/R = ${currentDepthFrac.toFixed(2)}`;
+    }
+
     patchSim = null; // force full rebuild for new star
     rebuildPatchSim();
   }
