@@ -1032,6 +1032,16 @@ input[type="range"]::-moz-range-thumb {
     border-radius: 6px;
   }
 
+  #interior-mobile-panel {
+    display: flex !important;
+    flex-direction: column;
+  }
+
+  #interior-mobile-panel canvas {
+    flex: 1;
+    min-height: 0;
+  }
+
   #tab-star .mini-panel canvas {
     width: 100%;
     height: 100%;
@@ -1448,6 +1458,39 @@ input[type="range"]::-moz-range-thumb {
   font-size: 13px;
   font-family: 'Inter', sans-serif;
   border-radius: 4px;
+}
+
+/* Mobile interior panel controls */
+#interior-mobile-controls {
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#interior-mobile-field-toggle {
+  display: flex;
+  gap: 2px;
+}
+
+.interior-depth-mobile {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  flex: 1;
+}
+
+.interior-depth-mobile input[type="range"] {
+  flex: 1;
+  height: 3px;
+  accent-color: rgba(255, 200, 80, 0.7);
+}
+
+/* Hide mobile interior panel on desktop */
+#interior-mobile-panel {
+  display: none;
 }
 
 #interior-depth-control {

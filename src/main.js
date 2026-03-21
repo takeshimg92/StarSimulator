@@ -23,12 +23,13 @@ const COMPOSITION_UPDATE_INTERVAL = 2000;
 let lastProfiles = null; // cached for hover tooltip
 
 // Interior cross-section state
-let patchRenderer = null;
+let patchRenderer = null;       // desktop floating panel
+let patchRendererMobile = null;  // mobile carousel panel
 let patchSim = null;
 let interiorModel = null;
 let interiorActive = false;
 let lastInteriorMass = null;
-let currentDepthFrac = 0.85; // r/R depth of the local patch
+let currentDepthFrac = 0.85;
 
 let suppressHydrogenSync = false;
 
@@ -583,6 +584,39 @@ function initInteriorPanel() {
 
   grip.addEventListener('pointerup', () => { resizing = false; });
   grip.addEventListener('pointercancel', () => { resizing = false; });
+
+  // --- Mobile interior panel ---
+  const mobileCanvas = document.getElementById('interior-mobile-canvas');
+  if (mobileCanvas) {
+    patchRendererMobile = new PatchRenderer(mobileCanvas, 400);
+
+    // Mobile field toggle
+    const mobileFieldBtns = document.querySelectorAll('#interior-mobile-field-toggle .field-btn');
+    mobileFieldBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        mobileFieldBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        if (patchRendererMobile) patchRendererMobile.setField(btn.dataset.field);
+      });
+    });
+
+    // Mobile depth slider
+    const mobileDepthSlider = document.getElementById('interior-mobile-depth-slider');
+    const mobileDepthLabel = document.getElementById('interior-mobile-depth-label');
+    if (mobileDepthSlider) {
+      mobileDepthSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        currentDepthFrac = 0.99 - (val / 100) * 0.94;
+        if (mobileDepthLabel) mobileDepthLabel.textContent = currentDepthFrac.toFixed(2);
+        // Sync desktop slider
+        const desktopSlider = document.getElementById('interior-depth-slider');
+        const desktopLabel = document.getElementById('interior-depth-label');
+        if (desktopSlider) desktopSlider.value = val;
+        if (desktopLabel) desktopLabel.textContent = `r/R = ${currentDepthFrac.toFixed(2)}`;
+        rebuildPatchSim();
+      });
+    }
+  }
 }
 
 function setInteriorActive(active) {
@@ -717,8 +751,7 @@ async function rebuildPatchSim() {
 
   patchSim.fastForward(60, 0.008);
 
-  patchRenderer.setSim(patchSim);
-  patchRenderer.setDepthInfo({
+  const depthInfo = {
     rFrac: currentDepthFrac,
     H_P_km: info.H_P_km,
     boxSize_km: info.boxSize_km,
@@ -726,7 +759,13 @@ async function rebuildPatchSim() {
     rho: info.rho_local,
     isConvective: info.isConvective,
     Ra: info.Ra_eff,
-  });
+  };
+  patchRenderer.setSim(patchSim);
+  patchRenderer.setDepthInfo(depthInfo);
+  if (patchRendererMobile) {
+    patchRendererMobile.setSim(patchSim);
+    patchRendererMobile.setDepthInfo(depthInfo);
+  }
 
   if (loadingEl) loadingEl.style.display = 'none';
   _rebuildPending = false;
@@ -817,8 +856,9 @@ function _dead() { /*
 */ }
 
 function updateInterior(mass) {
-  if (!patchRenderer) return;
-  if (!interiorActive) return;
+  const hasMobile = !!patchRendererMobile;
+  if (!patchRenderer && !hasMobile) return;
+  if (!interiorActive && !hasMobile) return;
 
   // Recompute interior model if mass changed
   if (mass !== lastInteriorMass) {
@@ -832,6 +872,7 @@ function updateInterior(mass) {
     });
 
     patchRenderer.setModel(interiorModel);
+    if (patchRendererMobile) patchRendererMobile.setModel(interiorModel);
 
     // Auto-set depth to the most interesting convective region
     const zb = interiorModel.zoneBoundaries;
@@ -846,13 +887,16 @@ function updateInterior(mass) {
     }
 
     // Sync the slider UI
-    const depthSlider = document.getElementById('interior-depth-slider');
-    const depthLabel = document.getElementById('interior-depth-label');
-    if (depthSlider) {
-      depthSlider.value = Math.round((0.99 - currentDepthFrac) / 0.94 * 100);
+    // Sync both desktop and mobile sliders
+    const sliderVal = Math.round((0.99 - currentDepthFrac) / 0.94 * 100);
+    for (const id of ['interior-depth-slider', 'interior-mobile-depth-slider']) {
+      const el = document.getElementById(id);
+      if (el) el.value = sliderVal;
     }
-    if (depthLabel) {
-      depthLabel.textContent = `r/R = ${currentDepthFrac.toFixed(2)}`;
+    for (const [id, fmt] of [['interior-depth-label', `r/R = ${currentDepthFrac.toFixed(2)}`],
+                              ['interior-mobile-depth-label', currentDepthFrac.toFixed(2)]]) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = fmt;
     }
 
     patchSim = null; // force full rebuild for new star
@@ -864,8 +908,9 @@ function updateInterior(mass) {
     patchSim.step(0.002);
   }
 
-  // Render
+  // Render both desktop and mobile
   patchRenderer.render();
+  if (patchRendererMobile) patchRendererMobile.render();
 }
 
 async function init() {
@@ -957,7 +1002,7 @@ async function init() {
   // Interior heatmap render loop (runs when interior tab is active)
   function interiorRenderLoop() {
     requestAnimationFrame(interiorRenderLoop);
-    if (interiorActive && sliderControls && patchRenderer) {
+    if (sliderControls && (interiorActive || patchRendererMobile)) {
       updateInterior(sliderControls.getValues().mass);
     }
   }
@@ -1198,7 +1243,7 @@ function initMobile(sliderControls) {
   const dots = document.querySelectorAll('#carousel-dots .dot');
   const panels = tabStar ? tabStar.querySelectorAll('.mini-panel') : [];
 
-  if (tabStar && panels.length === 3 && dots.length === 3) {
+  if (tabStar && panels.length >= 3 && dots.length >= 3) {
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
