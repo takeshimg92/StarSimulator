@@ -1188,9 +1188,30 @@ function animate() {
 
   // Push camera out if it's inside the star (can happen on fast mass increase)
   const camDist = camera.position.length();
-  if (camDist < scale * 1.3) {
+  const insideStar = camDist < scale * 1.3;
+  if (insideStar) {
+    // Smoothly push outward instead of jumping (lerp toward safe distance)
     const pushDist = scale * 2.5;
-    camera.position.normalize().multiplyScalar(pushDist);
+    const dir = camera.position.clone().normalize();
+    const targetPos = dir.multiplyScalar(pushDist);
+    camera.position.lerp(targetPos, 0.15); // smooth push over several frames
+  }
+
+  // Show/hide "inside star" overlay
+  let insideOverlay = document.getElementById('inside-star-overlay');
+  if (insideStar) {
+    if (!insideOverlay) {
+      insideOverlay = document.createElement('div');
+      insideOverlay.id = 'inside-star-overlay';
+      insideOverlay.style.cssText = 'position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;pointer-events:none;transition:opacity 0.3s';
+      insideOverlay.innerHTML = '<div style="color:rgba(80,60,30,0.9);font:14px Inter,sans-serif;text-align:center;text-shadow:0 0 20px rgba(255,200,100,0.5)">You are inside the star<br><span style="font-size:11px;opacity:0.6">Scroll to zoom out</span></div>';
+      document.getElementById('viewport').appendChild(insideOverlay);
+    }
+    insideOverlay.style.background = `rgba(255,240,200,${Math.min(0.85, 1.3 - camDist / scale)})`;
+    insideOverlay.style.opacity = '1';
+  } else if (insideOverlay) {
+    insideOverlay.style.opacity = '0';
+    setTimeout(() => { if (insideOverlay.style.opacity === '0') insideOverlay.remove(); }, 300);
   }
 
   // Bloom strength — reduce when zoomed in so surface detail is visible
