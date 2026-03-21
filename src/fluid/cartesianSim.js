@@ -98,17 +98,18 @@ export class CartesianSim {
       const T_base = this.T_bot - dT * frac;
 
       for (let i = 0; i < Nx; i++) {
-        // ±5% noise + sinusoidal perturbation to seed organized cells
-        const noise = (Math.random() - 0.5) * 0.1 * dT;
-        const sinusoidal = 0.02 * dT * Math.sin(2 * Math.PI * i / Nx * 4) * Math.sin(Math.PI * frac);
-        this.set(this.T, i, j, T_base + noise + sinusoidal);
+        // ±10% noise + multi-mode sinusoidal perturbation
+        const noise = (Math.random() - 0.5) * 0.2 * dT;
+        const mode1 = 0.05 * dT * Math.sin(2 * Math.PI * i / Nx * 3) * Math.sin(Math.PI * frac);
+        const mode2 = 0.03 * dT * Math.sin(2 * Math.PI * i / Nx * 7 + 1.3) * Math.sin(2 * Math.PI * frac);
+        this.set(this.T, i, j, T_base + noise + mode1 + mode2);
       }
     }
 
-    // Small random velocity seed
+    // Larger random velocity seed to kick-start circulation
     for (let k = 0; k < this.size; k++) {
-      this.vx[k] = (Math.random() - 0.5) * 0.01;
-      this.vy[k] = (Math.random() - 0.5) * 0.01;
+      this.vx[k] = (Math.random() - 0.5) * 0.05;
+      this.vy[k] = (Math.random() - 0.5) * 0.05;
     }
   }
 
@@ -301,16 +302,21 @@ export class CartesianSim {
   }
 
   _addTurbulentNoise(dt) {
+    const { Nx, Ny } = this;
     const maxV = this.maxVelocity() || 0.01;
-    const noiseAmp = maxV * 0.005; // 0.5% of current max velocity
-    const { Nx, Ny, size } = this;
+    const dT = Math.abs(this.T_bot - this.T_top) || 1;
 
-    // Only add noise in the interior (not at boundaries)
+    // Velocity noise: ~2% of max velocity
+    const vNoiseAmp = maxV * 0.02;
+    // Temperature noise: ~1% of ΔT (drives buoyancy fluctuations)
+    const tNoiseAmp = dT * 0.01;
+
     for (let j = 2; j < Ny - 2; j++) {
       for (let i = 0; i < Nx; i++) {
         const k = this.idx(i, j);
-        this.vx[k] += (Math.random() - 0.5) * 2 * noiseAmp;
-        this.vy[k] += (Math.random() - 0.5) * 2 * noiseAmp;
+        this.vx[k] += (Math.random() - 0.5) * 2 * vNoiseAmp;
+        this.vy[k] += (Math.random() - 0.5) * 2 * vNoiseAmp;
+        this.T[k] += (Math.random() - 0.5) * 2 * tNoiseAmp;
       }
     }
   }
