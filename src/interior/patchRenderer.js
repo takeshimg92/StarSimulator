@@ -512,42 +512,21 @@ export class PatchRenderer {
     ctx.fill();
   }
 
-  /**
-   * Determine whether text should be dark or light based on the
-   * average background brightness at the current depth.
-   */
-  _getTextColors() {
-    // Sample the colormap at the midpoint of the local range
-    const tMid = ((this._localTmin || 0) + (this._localTmax || 1)) / 2;
-    const cmap = getColormap(this.activeField);
-    const [r, g, b] = cmap(Math.max(0, Math.min(1, tMid)));
-    // Perceived brightness (ITU-R BT.601)
-    const brightness = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-
-    if (brightness > 0.55) {
-      // Bright background → dark text
-      return {
-        main: 'rgba(0, 0, 0, 0.7)',
-        dim: 'rgba(0, 0, 0, 0.4)',
-        warm: 'rgba(120, 50, 0, 0.7)',
-        cool: 'rgba(0, 40, 120, 0.7)',
-      };
-    }
-    // Dark background → light text
-    return {
-      main: 'rgba(255, 255, 255, 0.7)',
-      dim: 'rgba(255, 255, 255, 0.4)',
-      warm: 'rgba(255, 150, 50, 0.6)',
-      cool: 'rgba(80, 160, 255, 0.6)',
-    };
+  /** Enable text shadow for readability on any background. */
+  _setTextShadow(on) {
+    this.ctx.shadowColor = on ? 'rgba(0, 0, 0, 0.8)' : 'transparent';
+    this.ctx.shadowBlur = on ? 3 : 0;
+    this.ctx.shadowOffsetX = on ? 1 : 0;
+    this.ctx.shadowOffsetY = on ? 1 : 0;
   }
 
   _drawLabels() {
     const { ctx, cssSize: size, depthInfo } = this;
     const info = FIELD_INFO[this.activeField] || {};
-    const tc = this._getTextColors();
 
-    ctx.fillStyle = tc.main;
+    this._setTextShadow(true);
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
     ctx.font = '10px Inter, sans-serif';
 
     // Top-left: position info
@@ -559,18 +538,20 @@ export class PatchRenderer {
     }
 
     // Bottom/top labels
-    ctx.fillStyle = tc.warm;
+    ctx.fillStyle = 'rgba(255, 150, 50, 0.8)';
     ctx.textAlign = 'center';
     ctx.fillText('deeper (hotter)', size / 2, size - 6);
-    ctx.fillStyle = tc.cool;
+    ctx.fillStyle = 'rgba(80, 160, 255, 0.8)';
     ctx.fillText('shallower (cooler)', size / 2, 14);
 
     // Ra label
     if (this.sim) {
-      ctx.fillStyle = tc.dim;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.textAlign = 'right';
       ctx.fillText(`Ra = ${this.sim.Ra.toExponential(1)}`, size - 8, size - 6);
     }
+
+    this._setTextShadow(false);
 
     // --- Colorbar ---
     this._drawColorbar(size, info);
@@ -593,8 +574,7 @@ export class PatchRenderer {
       ctx.fillRect(barX, barY + py, barW, 1);
     }
 
-    const tc0 = this._getTextColors();
-    ctx.strokeStyle = tc0.dim;
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
     ctx.lineWidth = 0.5;
     ctx.strokeRect(barX, barY, barW, barH);
 
@@ -614,8 +594,8 @@ export class PatchRenderer {
       }
     }
 
-    const tc = this._getTextColors();
-    ctx.fillStyle = tc.main;
+    this._setTextShadow(true);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
     ctx.font = '8px monospace';
     ctx.textAlign = 'left';
     ctx.fillText(valMax, barX + barW + 3, barY + 7);
@@ -624,6 +604,7 @@ export class PatchRenderer {
     // Field name + unit
     ctx.font = '9px Inter, sans-serif';
     ctx.fillText(info.name || this.activeField, barX + barW + 3, barY - 4);
+    this._setTextShadow(false);
   }
 
   _fmtVal(v) {

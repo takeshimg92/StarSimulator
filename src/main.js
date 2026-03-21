@@ -101,12 +101,16 @@ function onParametersChanged({ mass, radius, temperature, hydrogen }, { wobble =
   evolution.setLuminosity(profiles.L);
 
   // Compute Schwarzschild zones for the 3D slice view
-  // (lightweight — reuses cached Lane-Emden solution)
-  const im = computeInteriorModel(mass);
-  setSchwarzschildZones({
-    zoneBoundaries: im.zoneBoundaries,
-    coreConvective: im.coreConvective,
-  });
+  try {
+    const im = computeInteriorModel(mass);
+    setSchwarzschildZones({
+      zoneBoundaries: im.zoneBoundaries,
+      coreConvective: im.coreConvective,
+    });
+  } catch (e) {
+    // Don't let interior model errors break the main render loop
+    console.warn('Interior model error for mass=' + mass, e);
+  }
 
   updateStarAppearance(temperature, radius, profiles.L, { wobble });
 
