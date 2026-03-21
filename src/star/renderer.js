@@ -1183,17 +1183,14 @@ function animate() {
   const currentCamDist = camera.position.length();
 
   // Update orbit controls limits
-  // When inside the star, don't constrain minDistance — let the user zoom out freely
-  const camInsideStar = camera.position.length() < scale * 1.3;
-  controls.minDistance = camInsideStar ? 1.5 : Math.max(1.5, scale * 1.2);
+  // Never constrain minDistance below the camera's current position —
+  // this ensures the user can ALWAYS zoom out, even from inside the star.
+  const camDist = camera.position.length();
+  controls.minDistance = Math.min(camDist, Math.max(1.5, scale * 1.2));
   controls.maxDistance = 600;
 
-  // Detect if camera is inside the star
-  const camDist = camera.position.length();
+  // Show overlay when inside the star
   const insideStar = camDist < scale * 1.2;
-
-  // Don't fight the camera — just show overlay and let user zoom out.
-  // The minDistance constraint above prevents zooming further in.
   let insideOverlay = document.getElementById('inside-star-overlay');
   if (insideStar) {
     if (!insideOverlay) {
@@ -1212,7 +1209,7 @@ function animate() {
   }
 
   // Bloom strength — reduce when zoomed in so surface detail is visible
-  const dist = camera.position.length();
+  const dist = camDist;
   const distFactor = Math.max(0.0, Math.min(1.0, (dist - scale * 2) / (scale * 4)));
   bloomPass.strength = current.bloom * distFactor;
 
