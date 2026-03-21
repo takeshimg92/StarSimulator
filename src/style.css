@@ -1431,9 +1431,20 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 0 0 8px 0;
 }
 
-#interior-field-name {
-  padding: 2px 4px 0;
-  font-size: 9px;
-  color: rgba(255, 255, 255, 0.35);
-  text-align: center;
+#interior-depth-control {
+  padding: 4px 6px 2px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#interior-depth-control label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#interior-depth-slider {
+  flex: 1;
+  height: 3px;
+  accent-color: rgba(255, 200, 80, 0.7);
 }

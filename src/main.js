@@ -10,9 +10,8 @@ import { initImplementationPanel } from './ui/implementation.js';
 import * as evolution from './physics/evolution.js';
 import { loadTracks } from './physics/mistTracks.js';
 import { computeInteriorModel } from './physics/interiorModel.js';
-import { ConvectionSim } from './fluid/convectionSim.js';
-import { WedgeRenderer } from './interior/wedgeRenderer.js';
-import { FIELD_INFO } from './interior/colormaps.js';
+import { CartesianSim } from './fluid/cartesianSim.js';
+import { PatchRenderer } from './interior/patchRenderer.js';
 import * as THREE from 'three';
 import 'katex/dist/katex.min.css';
 
@@ -24,11 +23,12 @@ const COMPOSITION_UPDATE_INTERVAL = 2000;
 let lastProfiles = null; // cached for hover tooltip
 
 // Interior cross-section state
-let heatmapRenderer = null;
-let convectionSim = null;
+let patchRenderer = null;
+let patchSim = null;
 let interiorModel = null;
 let interiorActive = false;
 let lastInteriorMass = null;
+let currentDepthFrac = 0.85; // r/R depth of the local patch
 
 let suppressHydrogenSync = false;
 
@@ -486,23 +486,21 @@ function initInteriorPanel() {
   const canvas = document.getElementById('interior-canvas');
   if (!canvas) return;
 
-  heatmapRenderer = new WedgeRenderer(canvas, 512);
+  patchRenderer = new PatchRenderer(canvas, 512);
 
-  // Field toggle buttons
-  const buttons = document.querySelectorAll('#interior-field-toggle .field-btn');
-  const fieldNameEl = document.getElementById('interior-field-name');
-
-  buttons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      buttons.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const field = btn.dataset.field;
-      heatmapRenderer.setField(field);
-      if (fieldNameEl) {
-        fieldNameEl.textContent = (FIELD_INFO[field] || {}).name || field;
-      }
+  // Depth slider
+  const depthSlider = document.getElementById('interior-depth-slider');
+  const depthLabel = document.getElementById('interior-depth-label');
+  if (depthSlider) {
+    depthSlider.addEventListener('input', (e) => {
+      // Slider 0-100 maps to r/R = 0.99 (surface) down to 0.50 (deep)
+      const val = parseInt(e.target.value);
+      currentDepthFrac = 0.99 - (val / 100) * 0.49;
+      if (depthLabel) depthLabel.textContent = `r/R = ${currentDepthFrac.toFixed(2)}`;
+      // Force recompute of the patch sim
+      rebuildPatchSim();
     });
-  });
+  }
 
   // --- Draggable + resizable panel ---
   const panel = document.getElementById('interior-float');
@@ -572,7 +570,7 @@ function setInteriorActive(active) {
     panel.style.display = active ? '' : 'none';
   }
   if (active) {
-    lastInteriorMass = null; // force recompute
+    lastInteriorMass = null;
     if (sliderControls) {
       updateInterior(sliderControls.getValues().mass);
     }
@@ -580,43 +578,91 @@ function setInteriorActive(active) {
 }
 
 /**
- * Interpolate a 1D model profile onto the sim grid.
- * @param {number[]} modelR - model r/R array
- * @param {number[]} modelVal - model values
- * @param {number} Nr - sim grid rows
- * @param {number} rInner - sim inner radius (r/R)
- * @param {number} rOuter - sim outer radius (r/R)
- * @returns {Float64Array}
+ * Compute the local Rayleigh number at a given depth from the 1D model.
+ * Ra = g α ΔT H_P³ / (ν κ_th)
+ * We use H_P as the length scale and ΔT = dT/dr × H_P as the temperature
+ * drop across one scale height.
  */
-function interpToSimGrid(modelR, modelVal, Nr, rInner, rOuter) {
-  const arr = new Float64Array(Nr);
-  const dr = (rOuter - rInner) / Nr;
-  for (let i = 0; i < Nr; i++) {
-    const rFrac = rInner + (i + 0.5) * dr;
-    // Binary search
-    let lo = 0, hi = modelR.length - 1;
-    while (hi - lo > 1) {
-      const mid = (lo + hi) >> 1;
-      if (modelR[mid] <= rFrac) lo = mid; else hi = mid;
-    }
-    if (rFrac <= modelR[0]) { arr[i] = modelVal[0]; continue; }
-    if (rFrac >= modelR[modelR.length - 1]) { arr[i] = modelVal[modelVal.length - 1]; continue; }
-    const f = (rFrac - modelR[lo]) / (modelR[hi] - modelR[lo]);
-    arr[i] = modelVal[lo] + f * (modelVal[hi] - modelVal[lo]);
-  }
-  return arr;
-}
-
-/**
- * Build all sim profiles from the 1D interior model.
- * Returns { gravity, thermalDiff, viscosity, T_profile, v_conv_seed } as Float64Arrays.
- */
-function buildSimProfiles(model, Nr, rInner, rOuter) {
-  const { G, R_sun } = constants;
+function computeLocalRa(model, rFrac) {
+  const { G, k_B, m_p, sigma: sig, R_sun } = constants;
   const R = model.radius * R_sun;
 
-  // --- Gravity: g(r) = G·m(r)/r² ---
-  const mEncInterp = interpToSimGrid(model.rFrac, model.mEnclosed, Nr, rInner, rOuter);
+  // Interpolate quantities at this depth
+  const idx = Math.min(model.N - 1, Math.round(rFrac * (model.N - 1)));
+  const rho = model.rho[idx];
+  const T = model.T[idx];
+  const P = model.P[idx];
+  const kappa = model.kappa[idx];
+  const m = model.mEnclosed[idx];
+  const r = rFrac * R;
+
+  if (rho < 1e-10 || T < 100 || r < 1e3) return { Ra: 0, H_P_km: 1, g_local: 0 };
+
+  const g = G * m / (r * r);
+  const H_P = P / (rho * g);
+  const cp = 5 * k_B / (2 * model.mu * m_p);
+  const kth = (16 * sig * T * T * T) / (3 * kappa * rho * rho * cp);
+
+  // Thermal expansion α = 1/T for ideal gas
+  const alpha = 1 / T;
+
+  // Temperature gradient dT/dr from the polytrope
+  const dTdr = (idx > 0)
+    ? (model.T[idx] - model.T[idx - 1]) / ((model.rFrac[idx] - model.rFrac[idx - 1]) * R)
+    : 0;
+  const deltaT = Math.abs(dTdr) * H_P;
+
+  // Estimate kinematic viscosity ν from the photon mean free path (radiative viscosity)
+  // ν_rad ~ c / (3 κ ρ) — a rough estimate
+  const nu = constants.c / (3 * kappa * rho);
+
+  const Ra = alpha * g * deltaT * H_P * H_P * H_P / (nu * kth);
+
+  return {
+    Ra: Math.max(0, Ra),
+    H_P,
+    H_P_km: H_P / 1000,
+    g_local: g,
+    T_local: T,
+    rho_local: rho,
+    kth,
+    nu,
+    boxSize_km: (3.5 * H_P) / 1000,
+    isConvective: model.isConvective[idx],
+  };
+}
+
+function rebuildPatchSim() {
+  if (!interiorModel || !patchRenderer) return;
+
+  const info = computeLocalRa(interiorModel, currentDepthFrac);
+
+  // Clamp Ra to a displayable range
+  // Ra < ~1700: no convection (stable). Ra > ~10⁶: very turbulent (expensive).
+  const Ra = Math.min(1e5, Math.max(100, info.Ra));
+  const Pr = info.nu > 0 && info.kth > 0 ? info.nu / info.kth : 0.7;
+
+  patchSim = new CartesianSim({
+    Nx: 128, Ny: 128,
+    Ra: info.isConvective ? Math.max(Ra, 5000) : Math.min(Ra, 500),
+    Pr: Math.max(0.1, Math.min(10, Pr)),
+  });
+
+  // Fast-forward to develop convection (if Ra > critical)
+  patchSim.fastForward(200, 0.01);
+
+  patchRenderer.setSim(patchSim);
+  patchRenderer.setDepthInfo({
+    rFrac: currentDepthFrac,
+    H_P_km: info.H_P_km,
+    boxSize_km: info.boxSize_km,
+    T: info.T_local,
+    rho: info.rho_local,
+    isConvective: info.isConvective,
+  });
+}
+
+function _dead() { /*
   const gravity = new Float64Array(Nr);
   const dr = (rOuter - rInner) / Nr;
   for (let i = 0; i < Nr; i++) {
@@ -698,18 +744,16 @@ function buildSimProfiles(model, Nr, rInner, rOuter) {
   const v_conv_seed = new Float64Array(Nr);
   if (vMax > 0) for (let i = 0; i < Nr; i++) v_conv_seed[i] = v_raw[i] / vMax;
 
-  return { gravity, thermalDiff, viscosity, T_profile, v_conv_seed };
-}
+*/ }
 
 function updateInterior(mass) {
-  if (!heatmapRenderer) return;
+  if (!patchRenderer) return;
   if (!interiorActive) return;
 
   // Recompute interior model if mass changed
   if (mass !== lastInteriorMass) {
     lastInteriorMass = mass;
     interiorModel = computeInteriorModel(mass);
-    heatmapRenderer.setModel(interiorModel);
 
     // Sync Schwarzschild zones to 3D slice view
     setSchwarzschildZones({
@@ -717,46 +761,16 @@ function updateInterior(mass) {
       coreConvective: interiorModel.coreConvective,
     });
 
-    // Domain from mid-star to surface — concentrates grid resolution
-    // in the convective zone while still showing the radiative interior
-    const Nr = 160, Ntheta = 64;
-    const rInner = 0.5;
-    const rOuter = 0.99;
-
-    // Build all profiles from the 1D physics model
-    const profiles = buildSimProfiles(interiorModel, Nr, rInner, rOuter);
-
-    const simOpts = {
-      Nr, Ntheta,
-      rInner, rOuter,
-      T_inner: 1.0,  // normalized: 1 = core temp, 0 = surface temp
-      T_outer: 0.0,
-      gravity: profiles.gravity,
-      alpha: 1.0,
-      viscosity: profiles.viscosity,
-      thermalDiff: profiles.thermalDiff,
-      T_profile: profiles.T_profile,
-      v_conv_seed: profiles.v_conv_seed,
-    };
-
-    if (!convectionSim) {
-      convectionSim = new ConvectionSim(simOpts);
-    } else {
-      convectionSim.reset(simOpts);
-    }
-
-    // Fast-forward to develop convection cells
-    convectionSim.fastForward(100, 0.015);
-    heatmapRenderer.setConvectionSim(convectionSim);
+    rebuildPatchSim();
   }
 
-  // Step the simulation (decoupled from render — step at lower rate)
-  if (convectionSim) {
-    convectionSim.step(0.015);
+  // Step the simulation
+  if (patchSim) {
+    patchSim.step(0.01);
   }
 
   // Render
-  heatmapRenderer.render(performance.now() / 1000);
+  patchRenderer.render();
 }
 
 async function init() {
@@ -848,7 +862,7 @@ async function init() {
   // Interior heatmap render loop (runs when interior tab is active)
   function interiorRenderLoop() {
     requestAnimationFrame(interiorRenderLoop);
-    if (interiorActive && sliderControls) {
+    if (interiorActive && sliderControls && patchRenderer) {
       updateInterior(sliderControls.getValues().mass);
     }
   }
