@@ -181,6 +181,40 @@ In the Interior tab, this velocity drives the speed of the animated convection c
     ],
   },
   {
+    title: 'The Interior Convection Simulation',
+    body: `The Interior panel simulates convection in a small box (a few pressure scale heights across) at a user-selected depth. The simulation uses the <b>Boussinesq approximation</b> to the Navier-Stokes equations — the standard framework for thermal convection:`,
+    equation: String.raw`\frac{\partial \vec{v}}{\partial t} + (\vec{v}\cdot\nabla)\vec{v} = -\frac{\nabla p}{\rho_0} + \nu\nabla^2\vec{v} + \alpha\,g\,\delta T\,\hat{r}`,
+    after: `The key physics: a temperature perturbation $\\delta T$ (deviation from the horizontal average at each height) creates a buoyancy force $\\alpha g \\delta T$ that drives fluid motion. Hot fluid is less dense and rises; cool fluid sinks. The competition between buoyancy (driving convection) and thermal diffusion (smoothing temperature perturbations) determines whether convection occurs.
+<br><br>
+Temperature evolves via advection-diffusion:`,
+    equation2: String.raw`\frac{\partial T}{\partial t} + (\vec{v}\cdot\nabla)T = \kappa_{\text{th}}\nabla^2 T`,
+    after2: `where $\\kappa_{\\text{th}}$ is the thermal diffusivity. In radiative zones, $\\kappa_{\\text{th}}$ is effectively very high (photons carry heat efficiently), so perturbations are smoothed out before buoyancy can act. In convective zones, $\\kappa_{\\text{th}}$ is low (the gas is opaque), perturbations persist, and buoyancy drives circulation.
+<br><br>
+The single dimensionless parameter controlling whether convection develops is the <b>Rayleigh number</b>:`,
+    refs: [
+      { text: 'Wikipedia: Boussinesq approximation (buoyancy)', url: 'https://en.wikipedia.org/wiki/Boussinesq_approximation_(buoyancy)' },
+      { text: 'Wikipedia: Rayleigh-Bénard convection', url: 'https://en.wikipedia.org/wiki/Rayleigh%E2%80%93B%C3%A9nard_convection' },
+    ],
+  },
+  {
+    title: 'The Rayleigh Number and Convective Onset',
+    body: `The Rayleigh number measures the ratio of buoyancy-driven forcing to diffusive damping:`,
+    equation: String.raw`\text{Ra} = \frac{\alpha\,g\,\Delta T\,H^3}{\nu\,\kappa_{\text{th}}}`,
+    after: `where $\\alpha$ is the thermal expansion coefficient, $g$ is gravity, $\\Delta T$ is the temperature drop across the box, $H$ is the box height, $\\nu$ is kinematic viscosity, and $\\kappa_{\\text{th}}$ is thermal diffusivity.
+<br><br>
+When $\\text{Ra}$ exceeds a critical value $\\text{Ra}_{\\text{crit}} \\approx 1708$ (for rigid boundaries), buoyancy overcomes diffusion and organized convection cells form. Below this threshold, the fluid remains still.
+<br><br>
+In the simulator, $\\text{Ra}$ is derived from the 1D stellar model at each depth:
+<ul>
+<li>$\\nabla_{\\text{rad}} / \\nabla_{\\text{ad}} < 1$ (radiative zone): Ra is subcritical → no convection</li>
+<li>$\\nabla_{\\text{rad}} / \\nabla_{\\text{ad}} > 1$ (convective zone): Ra grows logarithmically → convection cells develop</li>
+</ul>
+The mapping uses $\\text{Ra} = 1700 + 3000\\,\\ln(1 + 2(\\nabla_{\\text{rad}}/\\nabla_{\\text{ad}} - 1))$ above the Schwarzschild boundary, giving a gradual onset that matches the physical $v \\propto \\sqrt{\\nabla_{\\text{rad}} - \\nabla_{\\text{ad}}}$ scaling from mixing-length theory.`,
+    refs: [
+      { text: 'Wikipedia: Rayleigh number', url: 'https://en.wikipedia.org/wiki/Rayleigh_number' },
+    ],
+  },
+  {
     title: 'Quasi-Static Validity',
     body: `The interior structure equations assume time-independent equilibrium. This is justified because three very different timescales govern stellar evolution:
 <ul>

@@ -126,6 +126,38 @@ The Jos Stam algorithm solves this per timestep in four stages:
 The polar grid uses $\\theta$-periodic boundaries and no-slip (zero velocity) at the inner/outer radii. The Laplacian includes the $1/r$ and $1/r^2$ terms for polar coordinates.`,
   },
   {
+    title: 'Local-Patch Convection Simulator',
+    body: `The Interior panel runs a 2D Rayleigh-Bénard convection simulation in a Cartesian box at a user-selected depth. The box size is $3.5 \\times H_P$ (pressure scale heights), with periodic horizontal boundaries and no-slip (zero velocity) top/bottom walls. Fixed temperature: $T_{\\text{bot}} = 1$ (hot, deeper), $T_{\\text{top}} = 0$ (cool, shallower).
+<br><br>
+<b>Solver:</b> Stable Fluids (Jos Stam, 1999) on an $80 \\times 80$ Cartesian grid. Per timestep ($\\delta t = 0.002$):
+<ol>
+<li><b>Buoyancy:</b> $v_y \\mathrel{+}= \\delta t \\cdot g_{\\text{eff}} \\cdot (T - \\langle T \\rangle_x)$. The buoyancy reference is the horizontal average at each height (not a precomputed profile), which prevents spurious net vertical drift.</li>
+<li><b>Diffuse velocity:</b> implicit Gauss-Seidel, 15 iterations. Diffusion coefficient $\\nu = \\kappa_{\\text{th}} \\cdot \\text{Pr}$.</li>
+<li><b>Project:</b> Poisson pressure solve (Gauss-Seidel with SOR, $\\omega = 1.5$, 20 iterations) enforces $\\nabla \\cdot \\vec{v} = 0$.</li>
+<li><b>Advect:</b> semi-Lagrangian backtrace with bilinear interpolation — unconditionally stable.</li>
+<li><b>Project again:</b> advection breaks the divergence-free condition.</li>
+<li><b>Temperature:</b> advect (same method), then diffuse with $\\kappa_{\\text{th}}$.</li>
+<li><b>Subgrid noise:</b> persistent thermal anomalies (Gaussian blobs, $\\sim$0.3% of $\\Delta T$) that ramp up/down over 1–4 seconds, maintaining dynamic flow structure.</li>
+</ol>
+<b>Non-dimensionalization:</b> $\\kappa_{\\text{th}} = 0.04$ is chosen so the diffusion CFL number ($\\kappa_{\\text{th}} \\cdot \\delta t / \\delta x^2 \\approx 0.5$) stays within the Gauss-Seidel convergence range. The Rayleigh number enters through $g_{\\text{eff}} = \\text{Ra} \\cdot \\nu \\cdot \\kappa_{\\text{th}}$.
+<br><br>
+<b>Depth slider:</b> changing the depth updates $\\text{Ra}$ via $\\texttt{setRa()}$ without resetting the flow — the existing velocity and temperature fields evolve under the new buoyancy strength, giving smooth visual transitions across the convection boundary. Full reinitialization only occurs on mass change.`,
+    refs: [
+      { text: 'Stam (1999) — Stable Fluids', url: 'https://doi.org/10.1145/311535.311548' },
+    ],
+  },
+  {
+    title: 'Flow Visualization: Material Tracers',
+    body: `The flow is visualized with 800 material tracer particles that are advected by the velocity field each frame. Each particle:
+<ul>
+<li>Moves $\\sim$0.15 grid cells per frame at peak velocity (normalized so visual speed is independent of Ra)</li>
+<li>Draws a thin line segment from its previous position to its current position on a trail canvas</li>
+<li>The trail canvas fades at 5% per frame, creating smooth flowing paths</li>
+<li>Respawns at a random interior position when it exits the domain, gets stuck at a wall (speed $< 2\\%$ of max within 2 cells of boundary), or exceeds 180 frames of age</li>
+</ul>
+<b>Heatmap coloring:</b> the base color maps the horizontal average at each height to the field's colormap within the local physical range (from the 1D model). Fluctuations (deviations from the horizontal average) shift the colormap position by $\\pm 15\\%$ per standard deviation — visible as hotter/cooler patches at any depth.`,
+  },
+  {
     title: 'Quasi-Static Assumption',
     body: `The 1D structure equations assume time-independent equilibrium. This is valid because on the main sequence, the nuclear timescale ($\\sim 10^{10}$ yr) vastly exceeds both the thermal (Kelvin-Helmholtz, $\\sim 10^7$ yr) and dynamical (free-fall, $\\sim 30$ min) timescales.
 <br><br>
