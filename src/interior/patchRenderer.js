@@ -21,16 +21,11 @@ export class PatchRenderer {
    */
   constructor(canvas, size = 512) {
     this.canvas = canvas;
-    this.cssSize = size;
 
-    // HiDPI support
+    // Let the canvas fill its container; read actual CSS size
     const dpr = window.devicePixelRatio || 1;
     this.dpr = dpr;
-    this.size = Math.round(size * dpr);
-    canvas.width = this.size;
-    canvas.height = this.size;
-    canvas.style.width = size + 'px';
-    canvas.style.height = size + 'px';
+    this._updateSize();
 
     this.ctx = canvas.getContext('2d');
     this.ctx.scale(dpr, dpr); // scale so drawing coords are in CSS pixels
@@ -42,6 +37,17 @@ export class PatchRenderer {
 
     // Global color range (set once from the 1D model, not per-frame)
     this._globalRange = null; // { T: {min,max}, rho: {min,max}, ... }
+  }
+
+  _updateSize() {
+    const rect = this.canvas.getBoundingClientRect();
+    // Use the CSS width (constrained by the panel), or fallback to 400
+    const cssW = rect.width > 10 ? rect.width : 400;
+    this.cssSize = cssW;
+    this.size = Math.round(cssW * this.dpr);
+    this.canvas.width = this.size;
+    this.canvas.height = this.size;
+    this.ctx = this.canvas.getContext('2d');
   }
 
   setModel(model) {
@@ -97,6 +103,7 @@ export class PatchRenderer {
 
   render() {
     if (!this.sim) return;
+    this._updateSize();
     const { ctx, sim, dpr } = this;
     const pixelSize = this.size; // actual pixel size (CSS * dpr)
     const cssSize = this.cssSize;

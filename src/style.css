@@ -1355,7 +1355,7 @@ input[type="range"]::-moz-range-thumb {
   position: absolute;
   bottom: 120px;
   left: 232px;
-  width: 354px;
+  width: 420px;
   z-index: 10;
   background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(8px);
@@ -1412,9 +1412,15 @@ input[type="range"]::-moz-range-thumb {
   color: rgba(255, 220, 120, 0.95);
 }
 
+#interior-canvas-wrap {
+  position: relative;
+  overflow: hidden;
+}
+
 #interior-float canvas {
   display: block;
   width: 100%;
+  height: auto;
   aspect-ratio: 1;
   border-radius: 4px;
 }
@@ -1429,10 +1435,6 @@ input[type="range"]::-moz-range-thumb {
   /* small triangle grip indicator */
   background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.2) 50%);
   border-radius: 0 0 8px 0;
-}
-
-#interior-canvas-wrap {
-  position: relative;
 }
 
 #interior-loading {
