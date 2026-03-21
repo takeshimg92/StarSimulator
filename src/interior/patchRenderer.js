@@ -181,8 +181,43 @@ export class PatchRenderer {
       }
     }
 
-    // Fluctuation amplification factor (makes small deviations visible)
-    const FLUCT_GAIN = 40;
+    // Compute the physical value range at this depth from the 1D model.
+    // The base color maps to this LOCAL range within the global colormap,
+    // so the radial gradient (hotter at bottom, cooler at top) is visible
+    // but doesn't span the entire star's range.
+    let localTmin = 0, localTmax = 1; // colormap t positions for bottom/top
+    if (fieldData.is2D && this.depthInfo && this.model && gr) {
+      const m = this.model;
+      const rCenter = this.depthInfo.rFrac;
+      const H_P = this.depthInfo.H_P_km * 1000;
+      const R = m.radius * 6.957e8;
+      const boxHalf = 1.75 * H_P / R;
+
+      // Physical values at bottom (deeper) and top (shallower) of box
+      const rBot = Math.max(0, rCenter - boxHalf);
+      const rTop = Math.min(1, rCenter + boxHalf);
+
+      // Interpolate from model
+      const interpT = (rFrac, arr) => {
+        const rArr = m.rFrac;
+        let lo = 0, hi = rArr.length - 1;
+        while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (rArr[mid] <= rFrac) lo = mid; else hi = mid; }
+        const f = rArr[hi] !== rArr[lo] ? Math.max(0, Math.min(1, (rFrac - rArr[lo]) / (rArr[hi] - rArr[lo]))) : 0;
+        return arr[lo] + f * (arr[hi] - arr[lo]);
+      };
+
+      const physBot = interpT(rBot, m.T); // hotter (bottom)
+      const physTop = interpT(rTop, m.T); // cooler (top)
+
+      // Map to global colormap positions
+      if (useLog && physBot > 0 && physTop > 0) {
+        localTmax = (Math.log10(physBot) - gMin) / gRange; // bottom = higher T = higher t
+        localTmin = (Math.log10(physTop) - gMin) / gRange; // top = lower T = lower t
+      }
+    }
+
+    // Subtle fluctuation gain — perturbations modulate brightness gently
+    const FLUCT_GAIN = 12;
 
     for (let py = 0; py < pixelSize; py++) {
       for (let px = 0; px < pixelSize; px++) {
@@ -208,21 +243,15 @@ export class PatchRenderer {
           baseVal = (1 - fy) * rowAvg[sj0] + fy * rowAvg[sj1];
         } else {
           val = fieldData.values[sj0] || 0;
-          baseVal = val; // 1D fields have no fluctuation
+          baseVal = val;
         }
 
         // Map base value to colormap position
-        // For 2D sim fields (T, v): values are normalized 0-1.
-        // Map to physical range using depth info for the base color.
         let t;
-        if (fieldData.is2D && this.depthInfo && gr) {
-          // Linearly map sim's baseVal (0=surface, 1=core) to a position
-          // within the local physical range at this depth
-          const rFrac = this.depthInfo.rFrac;
-          // The sim's T goes from T_bot=1 (deeper) to T_top=0 (shallower)
-          // Map to global log scale: interpolate between local T values
-          const localLogVal = gMin + (gMax - gMin) * baseVal;
-          t = (localLogVal - gMin) / gRange;
+        if (fieldData.is2D) {
+          // Sim's baseVal: 0=top(cool) to 1=bottom(hot).
+          // Map to the local physical range within the global colormap.
+          t = localTmin + (localTmax - localTmin) * baseVal;
         } else if (useLog && baseVal > 0) {
           t = (Math.log10(baseVal) - gMin) / gRange;
         } else {
@@ -232,7 +261,7 @@ export class PatchRenderer {
 
         const [cr, cg, cb] = cmap(t);
 
-        // Add fluctuation brightness: deviation from horizontal average
+        // Subtle fluctuation brightness
         let fluct = 0;
         if (fieldData.is2D) {
           const dev = val - baseVal;

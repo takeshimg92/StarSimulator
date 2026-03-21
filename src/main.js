@@ -653,11 +653,12 @@ function computeLocalPatchParams(model, rFrac) {
   if (ratio <= 1) {
     Ra_eff = ratio * 1700;
   } else {
-    // √(ratio - 1) gives gradual onset matching MLT velocity scaling.
-    // Scale so Ra reaches ~100k at ratio ~1000 (deep convective zone).
-    Ra_eff = 1700 + 5000 * Math.sqrt(ratio - 1);
+    // Logarithmic ramp above critical — much gentler than √ or linear.
+    // log(1 + x) grows very slowly, preventing the dramatic jump between
+    // adjacent r/R values where ∇_rad changes by 5-10× per 0.01 in r/R.
+    Ra_eff = 1700 + 3000 * Math.log(1 + (ratio - 1) * 2);
   }
-  Ra_eff = Math.min(Ra_eff, 1e5);
+  Ra_eff = Math.min(Ra_eff, 30000); // cap lower for smoother visual
 
   return {
     Ra_eff,
