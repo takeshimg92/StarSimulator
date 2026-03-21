@@ -105,7 +105,10 @@ export class PatchRenderer {
     // --- Layer 2: Streamlines ---
     this._drawStreamlines();
 
-    // --- Layer 3: Labels and info ---
+    // --- Layer 3: Mini-map showing box position in star ---
+    this._drawMiniMap();
+
+    // --- Layer 4: Labels and info ---
     this._drawLabels();
   }
 
@@ -275,6 +278,69 @@ export class PatchRenderer {
     const fy = cj - j0;
     return (1 - fx) * ((1 - fy) * this.sim.get(field, i0, j0) + fy * this.sim.get(field, i0, j0 + 1)) +
            fx * ((1 - fy) * this.sim.get(field, i0 + 1, j0) + fy * this.sim.get(field, i0 + 1, j0 + 1));
+  }
+
+  /**
+   * Draw a small schematic of the star cross-section with the box's
+   * radial position and angular extent highlighted.
+   */
+  _drawMiniMap() {
+    if (!this.depthInfo || !this.model) return;
+    const { ctx, size } = this;
+
+    const mapR = 36; // radius of the mini-star circle
+    const cx = size - mapR - 10;
+    const cy = mapR + 30;
+
+    // Star circle (dark fill)
+    ctx.beginPath();
+    ctx.arc(cx, cy, mapR, 0, 2 * Math.PI);
+    ctx.fillStyle = 'rgba(40, 20, 0, 0.7)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 200, 100, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Zone boundaries (dashed arcs)
+    ctx.save();
+    ctx.setLineDash([2, 2]);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 0.5;
+    for (const bnd of this.model.zoneBoundaries) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, bnd * mapR, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Box position: show as a highlighted radial band
+    const rFrac = this.depthInfo.rFrac;
+    const R_star = this.model.radius * 6.957e8;
+    const H_P = this.depthInfo.H_P_km * 1000;
+    const boxHalfR = (1.75 * H_P / R_star); // half box height in r/R
+    const rInner = Math.max(0, rFrac - boxHalfR);
+    const rOuter = Math.min(1, rFrac + boxHalfR);
+
+    // Draw the box as a highlighted annular wedge (small angle for visibility)
+    const wedgeAngle = Math.PI / 6; // 30° for visibility
+    const startAngle = -Math.PI / 2 - wedgeAngle / 2;
+    const endAngle = -Math.PI / 2 + wedgeAngle / 2;
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, rOuter * mapR, startAngle, endAngle);
+    ctx.arc(cx, cy, rInner * mapR, endAngle, startAngle, true);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255, 200, 80, 0.5)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Center dot
+    ctx.beginPath();
+    ctx.arc(cx, cy, 1.5, 0, 2 * Math.PI);
+    ctx.fillStyle = 'rgba(255, 255, 200, 0.6)';
+    ctx.fill();
   }
 
   _drawLabels() {
