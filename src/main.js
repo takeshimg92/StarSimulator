@@ -632,6 +632,10 @@ function setInteriorActive(active) {
   const mobilePanel = document.getElementById('interior-mobile-panel');
   if (mobilePanel) {
     mobilePanel.classList.toggle('slice-active', active);
+    // When activating, scroll the carousel to show the interior panel
+    if (active) {
+      requestAnimationFrame(() => mobilePanel.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' }));
+    }
   }
 
   if (active) {
