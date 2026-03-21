@@ -237,8 +237,10 @@ export class PatchRenderer {
     this._localTmin = localTmin;
     this._localTmax = localTmax;
 
-    // Subtle fluctuation gain
-    const FLUCT_GAIN = 12;
+    // Fluctuation strength: how much the colormap position shifts
+    // per standard deviation of temperature perturbation.
+    // 0.15 means a 1-sigma hot perturbation shifts 15% along the colormap.
+    const FLUCT_CMAP_SHIFT = 0.15;
 
     for (let py = 0; py < pixelSize; py++) {
       for (let px = 0; px < pixelSize; px++) {
@@ -283,20 +285,23 @@ export class PatchRenderer {
         }
         t = Math.max(0, Math.min(1, t));
 
-        const [cr, cg, cb] = cmap(t);
-
-        // Subtle fluctuation brightness
-        let fluct = 0;
-        if (fieldData.is2D) {
+        // Shift colormap position by fluctuation (not raw RGB brightness).
+        // Hot perturbation → shift toward hotter color, cool → toward cooler.
+        // This is visible at any depth because it's relative to the local color.
+        if (fieldData.is2D && !isVelocity) {
           const dev = val - baseVal;
           const std = (1 - fy) * rowStd[sj0] + fy * rowStd[sj1];
-          fluct = (std > 1e-12) ? (dev / std) * FLUCT_GAIN : 0;
+          if (std > 1e-12) {
+            t += (dev / std) * FLUCT_CMAP_SHIFT;
+            t = Math.max(0, Math.min(1, t));
+          }
         }
 
+        const [cr, cg, cb] = cmap(t);
         const idx4 = (py * pixelSize + px) * 4;
-        data[idx4] = Math.max(0, Math.min(255, cr + fluct));
-        data[idx4 + 1] = Math.max(0, Math.min(255, cg + fluct));
-        data[idx4 + 2] = Math.max(0, Math.min(255, cb + fluct));
+        data[idx4] = cr;
+        data[idx4 + 1] = cg;
+        data[idx4 + 2] = cb;
         data[idx4 + 3] = 255;
       }
     }
