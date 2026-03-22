@@ -1032,12 +1032,8 @@ input[type="range"]::-moz-range-thumb {
     border-radius: 6px;
   }
 
-  /* Only show mobile interior panel when slice is active */
+  /* Mobile interior panel always visible in carousel */
   #interior-mobile-panel {
-    display: none !important;
-  }
-
-  #interior-mobile-panel.slice-active {
     display: flex !important;
     flex-direction: column;
   }
@@ -1410,6 +1406,21 @@ input[type="range"]::-moz-range-thumb {
   margin-right: auto;
 }
 
+#interior-close-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  margin-left: 4px;
+}
+
+#interior-close-btn:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
 #interior-field-toggle {
   display: flex;
   gap: 2px;
@@ -1504,13 +1515,9 @@ input[type="range"]::-moz-range-thumb {
   accent-color: rgba(255, 200, 80, 0.7);
 }
 
-/* Hide mobile interior panel on desktop, and when slice is off */
+/* Hide mobile interior panel on desktop */
 #interior-mobile-panel {
   display: none;
-}
-
-#interior-mobile-panel.slice-active {
-  display: none; /* overridden by mobile media query below */
 }
 
 #interior-depth-control {

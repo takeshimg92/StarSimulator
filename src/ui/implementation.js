@@ -101,47 +101,68 @@ Total: $\\kappa = \\max(\\kappa_K + \\kappa_{H^-},\\; \\kappa_{\\text{es}})$, ca
     title: 'Interior Heatmap: Architecture',
     body: `The Interior tab uses a <b>hybrid 1D + 2D</b> architecture:
 <br><br>
-<b>1D layer</b>: The <code>interiorModel.js</code> orchestrator calls the Lane-Emden solver (using $n = 1.5$ for $M < 0.35\\,M_\\odot$, $n = 3$ otherwise), then computes energy generation, opacity, and the Schwarzschild criterion at each radial grid point. This gives radial profiles of $T$, $\\rho$, $P$, $\\varepsilon$, $\\kappa$, $\\nabla_{\\text{rad}}$, and convective velocity — plus the locations of convective/radiative zone boundaries.
+<b>1D radial model</b>: The orchestrator calls the Lane-Emden solver (using polytropic index $n = 1.5$ for $M < 0.35\\,M_\\odot$, $n = 3$ otherwise), then computes energy generation, opacity, and the Schwarzschild criterion at each of ~200 radial grid points. This gives radial profiles of $T$, $\\rho$, $P$, $\\varepsilon$, $\\kappa$, $\\nabla_{\\text{rad}}$, and convective velocity — plus the locations of convective/radiative zone boundaries. These boundaries are <i>not</i> placed by hand: they emerge naturally from $\\nabla_{\\text{rad}} > \\nabla_{\\text{ad}}$.
 <br><br>
-<b>2D layer</b>: A <b>Stable Fluids</b> solver (Jos Stam, 1999) runs on a polar grid ($48 \\times 96$ cells) within the largest convective zone. The Boussinesq approximation couples the velocity field to the temperature field via a buoyancy force $\\vec{F} = \\alpha g \\delta T\\,\\hat{r}$. Boundary conditions (fixed temperatures at inner/outer radii) come from the 1D profiles.
+<b>2D convection sim</b>: A local-patch Rayleigh-Bénard convection simulator (described below) runs at a user-selected depth. The simulation box represents a few pressure scale heights of the stellar interior, with physics parameters (effective Rayleigh number, temperature range) derived from the 1D model.
 <br><br>
-<b>Rendering</b>: A 512×512 Canvas 2D composites both layers. The base color comes from a 256-entry radial lookup table (1D profile → colormap). In convective zones, the 2D temperature perturbations and velocity field are overlaid. Dashed circles mark zone boundaries. A colorbar shows the value range.`,
+<b>Rendering</b>: A Canvas 2D (sized to the panel, with HiDPI support via <code>devicePixelRatio</code>) composites the heatmap and flow visualization. The base color maps the horizontal average temperature at each height to the selected field's colormap within the local physical range. Fluctuations (deviations from the horizontal mean) shift the colormap position by $\\pm 15\\%$ per standard deviation, making convective perturbations visible at any depth. 800 material tracer particles show the flow field. A minimap shows the box's position within the star.`,
+  },
+  {
+    title: 'Why "Stable Fluids"?',
+    body: `Solving fluid dynamics in real time is notoriously difficult. Most numerical methods for the Navier-Stokes equations are <b>conditionally stable</b>: the timestep must satisfy the Courant-Friedrichs-Lewy (CFL) condition $\\Delta t < \\Delta x / v_{\\max}$, or the solution blows up. For a fast-moving fluid on a fine grid, this can require thousands of tiny timesteps per frame — far too slow for interactive use.
+<br><br>
+In 1999, Jos Stam introduced the <b>Stable Fluids</b> algorithm for computer graphics. Its key innovation is <b>semi-Lagrangian advection</b>: instead of pushing fluid forward in time (which is unstable for large timesteps), it traces each grid point <i>backward</i> along the velocity field to find where the fluid came from, then copies the value from that origin. This "backtrace + interpolate" step is unconditionally stable — the solution never blows up, regardless of the timestep or flow speed.
+<br><br>
+The trade-off is numerical diffusion: the bilinear interpolation at the backtrace endpoint smears out fine details. But for our purposes this is acceptable — we are visualizing convective flow patterns, not predicting weather. The algorithm's stability lets us run a single timestep per animation frame at any Rayleigh number, which is essential for real-time performance.`,
     refs: [
       { text: 'Stam (1999) — Stable Fluids', url: 'https://doi.org/10.1145/311535.311548' },
+      { text: 'Wikipedia: Semi-Lagrangian scheme', url: 'https://en.wikipedia.org/wiki/Semi-Lagrangian_scheme' },
     ],
   },
   {
-    title: '2D Fluid Solver: Stable Fluids on Polar Grid',
-    body: `The convection simulation solves the incompressible Navier-Stokes equations with the Boussinesq buoyancy approximation:`,
-    equation: String.raw`\frac{\partial \vec{v}}{\partial t} + (\vec{v}\cdot\nabla)\vec{v} = -\frac{\nabla p}{\rho_0} + \nu\nabla^2\vec{v} + \alpha\,g\,\delta T\,\hat{r}`,
-    after: `coupled with temperature advection-diffusion: $\\partial T/\\partial t + (\\vec{v}\\cdot\\nabla)T = \\kappa_{\\text{th}}\\nabla^2 T$.
+    title: 'The Gauss-Seidel Method',
+    body: `Two steps in the fluid solver — diffusion and pressure projection — require solving large systems of linear equations. Diffusion asks: "given the current field, what field would produce these values after being smoothed by viscosity?" Pressure projection asks: "what pressure field makes the velocity divergence-free?"
 <br><br>
-The Jos Stam algorithm solves this per timestep in four stages:
-<ol>
-<li><b>Add forces:</b> buoyancy $\\alpha g \\delta T$ applied to radial velocity.</li>
-<li><b>Diffuse:</b> implicit viscous/thermal diffusion via Gauss-Seidel iteration.</li>
-<li><b>Project:</b> pressure Poisson equation ($\\nabla^2 p = \\nabla \\cdot \\vec{v}$) solved via Gauss-Seidel with SOR ($\\omega = 1.5$), then $\\vec{v} \\leftarrow \\vec{v} - \\nabla p$.</li>
-<li><b>Advect:</b> semi-Lagrangian backtrace with bilinear interpolation. Unconditionally stable regardless of CFL number.</li>
-</ol>
-The polar grid uses $\\theta$-periodic boundaries and no-slip (zero velocity) at the inner/outer radii. The Laplacian includes the $1/r$ and $1/r^2$ terms for polar coordinates.`,
+Both reduce to equations of the form $\\nabla^2 f = b$ (a <b>Poisson equation</b>), discretized on the grid as a sparse linear system. A direct solver (like Gaussian elimination) would be too slow for real-time use. Instead, we use <b>Gauss-Seidel iteration</b>: start with a guess and repeatedly update each grid point to the average of its neighbors (adjusted by the source term). Each sweep reduces the error, and after 15–20 sweeps the solution is visually accurate.
+<br><br>
+For the pressure projection step, we accelerate convergence with <b>Successive Over-Relaxation (SOR)</b>: instead of moving all the way to the neighbor-average, we "overshoot" by a factor $\\omega = 1.5$, which reduces the number of iterations needed by roughly 2×. The optimal $\\omega$ depends on the grid size; 1.5 is a robust choice for an $80 \\times 80$ grid.
+<br><br>
+Why not a faster solver (FFT, multigrid)? Gauss-Seidel is simple, requires no extra memory, handles mixed boundary conditions naturally, and 15–20 iterations on an $80 \\times 80$ grid take $< 1$ ms. For visual-quality fluid simulation, this is more than sufficient.`,
+    refs: [
+      { text: 'Wikipedia: Gauss-Seidel method', url: 'https://en.wikipedia.org/wiki/Gauss%E2%80%93Seidel_method' },
+      { text: 'Wikipedia: Successive over-relaxation', url: 'https://en.wikipedia.org/wiki/Successive_over-relaxation' },
+    ],
   },
   {
     title: 'Local-Patch Convection Simulator',
-    body: `The Interior panel runs a 2D Rayleigh-Bénard convection simulation in a Cartesian box at a user-selected depth. The box size is $3.5 \\times H_P$ (pressure scale heights), with periodic horizontal boundaries and no-slip (zero velocity) top/bottom walls. Fixed temperature: $T_{\\text{bot}} = 1$ (hot, deeper), $T_{\\text{top}} = 0$ (cool, shallower).
+    body: `The Interior panel runs a 2D <b>Rayleigh-Bénard convection</b> simulation in a Cartesian box at a user-selected depth. The box represents $3.5$ pressure scale heights ($H_P$) of the stellar interior. Boundary conditions: periodic in the horizontal direction (the box "wraps around"), no-slip (zero velocity) at the top and bottom walls, fixed temperature $T_{\\text{bot}} = 1$ (hot, deeper) and $T_{\\text{top}} = 0$ (cool, shallower).
 <br><br>
-<b>Solver:</b> Stable Fluids (Jos Stam, 1999) on an $80 \\times 80$ Cartesian grid. Per timestep ($\\delta t = 0.002$):
+<b>Why a local patch?</b> A full-star convection simulation would need to resolve scales from $\\sim$1000 km (granulation) to $\\sim 10^6$ km (stellar radius) — a dynamic range of $10^3$ that would require millions of grid points. Instead, we simulate a small representative box at the user's chosen depth, with physics parameters derived from the 1D stellar model. This captures the essential convective dynamics (rising plumes, sinking lanes, cell formation) at interactive frame rates.
+<br><br>
+<b>Solver:</b> Stable Fluids on an $80 \\times 80$ Cartesian grid. Each animation frame advances by one timestep ($\\delta t = 0.002$):
 <ol>
-<li><b>Buoyancy:</b> $v_y \\mathrel{+}= \\delta t \\cdot g_{\\text{eff}} \\cdot (T - \\langle T \\rangle_x)$. The buoyancy reference is the horizontal average at each height (not a precomputed profile), which prevents spurious net vertical drift.</li>
-<li><b>Diffuse velocity:</b> implicit Gauss-Seidel, 15 iterations. Diffusion coefficient $\\nu = \\kappa_{\\text{th}} \\cdot \\text{Pr}$.</li>
-<li><b>Project:</b> Poisson pressure solve (Gauss-Seidel with SOR, $\\omega = 1.5$, 20 iterations) enforces $\\nabla \\cdot \\vec{v} = 0$.</li>
-<li><b>Advect:</b> semi-Lagrangian backtrace with bilinear interpolation — unconditionally stable.</li>
-<li><b>Project again:</b> advection breaks the divergence-free condition.</li>
-<li><b>Temperature:</b> advect (same method), then diffuse with $\\kappa_{\\text{th}}$.</li>
-<li><b>Subgrid noise:</b> persistent thermal anomalies (Gaussian blobs, $\\sim$0.3% of $\\Delta T$) that ramp up/down over 1–4 seconds, maintaining dynamic flow structure.</li>
+<li><b>Buoyancy forcing:</b> $v_y \\mathrel{+}= \\delta t \\cdot g_{\\text{eff}} \\cdot (T - \\langle T \\rangle_x)$. The buoyancy reference is the <i>horizontal average</i> at each height (recomputed every step), not a precomputed linear profile. This prevents spurious net vertical drift that would otherwise cause the entire fluid to rise or sink together.</li>
+<li><b>Diffuse velocity:</b> implicit solve via Gauss-Seidel (15 iterations). Viscosity $\\nu = \\kappa_{\\text{th}} \\cdot \\text{Pr}$ with Prandtl number Pr $= 0.71$.</li>
+<li><b>Pressure projection:</b> solve $\\nabla^2 p = \\nabla \\cdot \\vec{v}$ via Gauss-Seidel with SOR ($\\omega = 1.5$, 20 iterations), then subtract $\\nabla p$ from $\\vec{v}$. This enforces incompressibility ($\\nabla \\cdot \\vec{v} = 0$).</li>
+<li><b>Advect velocity:</b> semi-Lagrangian backtrace with bilinear interpolation.</li>
+<li><b>Project again:</b> advection can reintroduce small divergence, so we project a second time.</li>
+<li><b>Advect + diffuse temperature:</b> same semi-Lagrangian advection, then implicit diffusion with thermal diffusivity $\\kappa_{\\text{th}}$.</li>
+<li><b>Thermal anomalies:</b> small persistent Gaussian blobs ($\\sim$0.3% of $\\Delta T$) appear at random locations and ramp up/down over 1–4 second lifecycles. These prevent the flow from settling into a perfectly steady state, mimicking the effect of unresolved turbulence.</li>
 </ol>
-<b>Non-dimensionalization:</b> $\\kappa_{\\text{th}} = 0.04$ is chosen so the diffusion CFL number ($\\kappa_{\\text{th}} \\cdot \\delta t / \\delta x^2 \\approx 0.5$) stays within the Gauss-Seidel convergence range. The Rayleigh number enters through $g_{\\text{eff}} = \\text{Ra} \\cdot \\nu \\cdot \\kappa_{\\text{th}}$.
+<b>Non-dimensionalization:</b> all quantities in the simulation are dimensionless. We set $\\kappa_{\\text{th}} = 0.04$, chosen so the diffusion CFL number $\\kappa_{\\text{th}} \\cdot \\delta t / \\delta x^2 \\approx 0.5$ stays comfortably within the Gauss-Seidel convergence range ($\\lesssim 1$). The Rayleigh number enters through the effective gravity: $g_{\\text{eff}} = \\text{Ra} \\cdot \\nu \\cdot \\kappa_{\\text{th}}$. This ensures that the dimensionless equations are exactly the Boussinesq system with the correct Ra.`,
+  },
+  {
+    title: 'Mapping Stellar Physics to Ra',
+    body: `The physical Rayleigh number inside a star is enormous ($\\text{Ra} \\sim 10^{9}$–$10^{15}$), far beyond what an $80 \\times 80$ grid can resolve. We therefore map the <i>local superadiabaticity</i> $\\nabla_{\\text{rad}} / \\nabla_{\\text{ad}}$ to an effective Ra for the simulation:
+<ul>
+<li><b>Radiative zone</b> ($\\nabla_{\\text{rad}} / \\nabla_{\\text{ad}} < 1$): $\\text{Ra}$ is set proportionally below the critical value, producing no convection.</li>
+<li><b>Convective zone</b> ($\\nabla_{\\text{rad}} / \\nabla_{\\text{ad}} > 1$): $\\text{Ra} = 1700 + 3000\\,\\ln\\bigl(1 + 2(\\nabla_{\\text{rad}}/\\nabla_{\\text{ad}} - 1)\\bigr)$, capped at 30,000.</li>
+</ul>
+The logarithmic mapping gives a gradual convective onset that matches the physical scaling $v_{\\text{conv}} \\propto \\sqrt{\\nabla_{\\text{rad}} - \\nabla_{\\text{ad}}}$ from mixing-length theory, while keeping Ra in the range where the simulation produces well-resolved convection cells.
 <br><br>
-<b>Depth slider:</b> changing the depth updates $\\text{Ra}$ via $\\texttt{setRa()}$ without resetting the flow — the existing velocity and temperature fields evolve under the new buoyancy strength, giving smooth visual transitions across the convection boundary. Full reinitialization only occurs on mass change.`,
+<b>Subcritical damping:</b> when the depth slider moves from a convective to a radiative zone, the flow should die out. We boost the viscosity by up to $10\\times$ for $\\text{Ra} < 1708$: $\\nu_{\\text{eff}} = \\nu \\cdot \\bigl(10(1 - \\text{Ra}/1708) + 1\\bigr)$. This formula evaluates to exactly 1 for $\\text{Ra} \\geq 1708$, so it never affects convective zones — it only accelerates the decay of residual flow in radiative regions.
+<br><br>
+<b>Smooth transitions:</b> changing the depth slider calls <code>setRa()</code> without resetting the flow state. The existing velocity and temperature fields evolve under the new buoyancy strength, giving continuous visual transitions across the convection boundary. Full reinitialization (with random Fourier-mode initial conditions) only occurs on mass change.`,
     refs: [
       { text: 'Stam (1999) — Stable Fluids', url: 'https://doi.org/10.1145/311535.311548' },
     ],
@@ -302,7 +323,7 @@ Zoom range is 1.5–600 (in scene units), with the starfield sphere at $r = 900$
 <ul>
 <li><b>Age-based track interpolation:</b> When the user selects a mass between two MIST tracks, the simulator interpolates at the same absolute age. This can blend two stars in very different evolutionary phases (e.g., one still on the main sequence, the other already on the RGB). A more robust approach would use Equivalent Evolutionary Phase (EEP) interpolation, as done by isochrone codes. This is the single largest source of inaccuracy for interpolated masses near phase boundaries.</li>
 <li><b>No mass loss:</b> The star retains its initial mass throughout its lifetime. In reality, RGB and AGB stars can lose 30–50% of their mass via stellar winds, and massive O/WR stars lose even more. The displayed mass is always the initial mass, which becomes increasingly misleading in late evolutionary phases.</li>
-<li><b>Convection zone boundaries are heuristic:</b> The cross-section view uses simple mass-based rules to place the convective/radiative boundary, not the Schwarzschild criterion. MIST tracks do not export convective boundary radii, so there is no authoritative data to match.</li>
+<li><b>Convection zone boundaries from polytrope:</b> The convective/radiative boundaries are computed from the Schwarzschild criterion ($\\nabla_{\\text{rad}} > \\nabla_{\\text{ad}}$) applied to the polytropic model — not hand-placed. However, a single-polytrope model is an approximation: real stars have different effective polytropic indices in radiative vs. convective zones. The resulting zone boundaries are qualitatively correct (solar convection onset near $\\sim 0.7R$, convective cores for massive stars) but not quantitatively precise.</li>
 <li><b>Visual scale compression:</b> The star's on-screen size scales as $R^{0.7}$ rather than linearly with radius. A 100 $R_\\odot$ red giant appears $\\sim$25 times larger than the Sun instead of 100 times. This compression is necessary to keep both dwarfs and giants visible without extreme zooming, but it understates the dramatic size differences between evolutionary phases.</li>
 <li><b>Fixed limb-darkening law:</b> A single quadratic law tuned for the Sun is used for all stars. In practice, limb-darkening coefficients depend on temperature, surface gravity, and wavelength. The error is modest for solar-type stars but noticeable for very hot or very cool stars.</li>
 <li><b>Boosted color saturation:</b> Blackbody colors are deliberately over-saturated (×1.4 for cool stars, ×1.15 for hot stars) to make temperature differences visually obvious. Real stars appear much closer to white.</li>

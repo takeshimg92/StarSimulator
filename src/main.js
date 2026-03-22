@@ -28,6 +28,7 @@ let patchRendererMobile = null;  // mobile carousel panel
 let patchSim = null;
 let interiorModel = null;
 let interiorActive = false;
+let mobileInteriorVisible = false; // true when interior panel is scrolled into view on mobile
 let lastInteriorMass = null;
 let currentDepthFrac = 0.85;
 
@@ -546,7 +547,7 @@ function initInteriorPanel() {
 
   // Drag via header
   header.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.field-btn')) return; // don't drag when clicking buttons
+    if (e.target.closest('.field-btn') || e.target.closest('#interior-close-btn')) return; // don't drag when clicking buttons
     ensureTopLeft();
     dragging = true;
     dragStartX = e.clientX;
@@ -620,22 +621,24 @@ function initInteriorPanel() {
 }
 
 function setInteriorActive(active) {
-  interiorActive = active;
+  if (isMobileView()) {
+    // On mobile, sim is gated by mobileInteriorVisible (IntersectionObserver),
+    // not interiorActive. Just scroll to the panel if activating.
+    if (active) {
+      lastInteriorMass = null;
+      const mobilePanel = document.getElementById('interior-mobile-panel');
+      if (mobilePanel) {
+        requestAnimationFrame(() => mobilePanel.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' }));
+      }
+    }
+    return;
+  }
 
-  // Desktop: show/hide floating panel (CSS hides it on mobile via !important)
+  // Desktop: interiorActive gates the sim + panel visibility
+  interiorActive = active;
   const floatPanel = document.getElementById('interior-float');
   if (floatPanel) {
     floatPanel.style.display = active ? '' : 'none';
-  }
-
-  // Mobile: show/hide carousel panel via class
-  const mobilePanel = document.getElementById('interior-mobile-panel');
-  if (mobilePanel) {
-    mobilePanel.classList.toggle('slice-active', active);
-    // When activating, scroll the carousel to show the interior panel
-    if (active) {
-      requestAnimationFrame(() => mobilePanel.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' }));
-    }
   }
 
   if (active) {
@@ -861,9 +864,14 @@ function _dead() { /*
 
 */ }
 
+function isMobileView() {
+  return window.innerWidth <= 900;
+}
+
 function updateInterior(mass) {
   if (!patchRenderer && !patchRendererMobile) return;
-  if (!interiorActive) return;
+  // On desktop, needs interiorActive; on mobile, only run when scrolled into view
+  if (!interiorActive && !mobileInteriorVisible) return;
 
   // Recompute interior model if mass changed
   if (mass !== lastInteriorMass) {
@@ -977,7 +985,21 @@ async function init() {
   });
   document.getElementById('slice-toggle').addEventListener('change', (e) => {
     setSliceView(e.target.checked);
-    setInteriorActive(e.target.checked);
+    if (e.target.checked) {
+      setInteriorActive(true);
+    } else {
+      // Hide desktop panel when slice is turned off
+      interiorActive = false;
+      const floatPanel = document.getElementById('interior-float');
+      if (floatPanel) floatPanel.style.display = 'none';
+    }
+  });
+
+  // Close button on desktop interior panel — hides panel and stops sim, but keeps slice view
+  document.getElementById('interior-close-btn').addEventListener('click', () => {
+    interiorActive = false;
+    const floatPanel = document.getElementById('interior-float');
+    if (floatPanel) floatPanel.style.display = 'none';
   });
 
   // Reset button — force true reload (bypass mobile bfcache)
@@ -1007,7 +1029,7 @@ async function init() {
   // Interior heatmap render loop (runs when interior tab is active)
   function interiorRenderLoop() {
     requestAnimationFrame(interiorRenderLoop);
-    if (sliderControls && interiorActive) {
+    if (sliderControls && (interiorActive || mobileInteriorVisible)) {
       updateInterior(sliderControls.getValues().mass);
     }
   }
@@ -1248,9 +1270,15 @@ function initMobile(sliderControls) {
   const dots = document.querySelectorAll('#carousel-dots .dot');
   const panels = tabStar ? tabStar.querySelectorAll('.mini-panel') : [];
 
+  const mobileInteriorPanel = document.getElementById('interior-mobile-panel');
   if (tabStar && panels.length >= 3 && dots.length >= 3) {
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
+        // Track whether the interior panel is currently visible in the carousel
+        if (entry.target === mobileInteriorPanel) {
+          mobileInteriorVisible = entry.isIntersecting && entry.intersectionRatio > 0.5;
+        }
+
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
           const idx = Array.from(panels).indexOf(entry.target);
           dots.forEach((d, i) => d.classList.toggle('active', i === idx));
@@ -1270,6 +1298,16 @@ function initMobile(sliderControls) {
     });
 
     panels.forEach(p => observer.observe(p));
+
+    // Default carousel to HR diagram (second panel) on mobile
+    const hrPanel = document.getElementById('hr-panel');
+    if (hrPanel && isMobileView()) {
+      requestAnimationFrame(() => {
+        hrPanel.scrollIntoView({ block: 'nearest', inline: 'start' });
+        // Set HR dot as active (index 1)
+        dots.forEach((d, i) => d.classList.toggle('active', i === 1));
+      });
+    }
 
     // Initial render of first visible panel after layout settles
     setTimeout(() => {

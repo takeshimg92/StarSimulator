@@ -66,17 +66,19 @@
       </div>
     </main>
 
-    <!-- Interior local-patch: floating in viewport, visible when slice is on -->
+    <!-- Interior local-patch: floating desktop panel (closeable independently of slice view) -->
     <div id="interior-float" style="display: none;">
       <div id="interior-float-header">
         <span>Interior</span>
         <div id="interior-field-toggle">
+
           <button class="field-btn active" data-field="temperature" title="Temperature">T</button>
           <button class="field-btn" data-field="density" title="Density">&rho;</button>
           <button class="field-btn" data-field="pressure" title="Pressure">P</button>
           <button class="field-btn" data-field="energy" title="Energy Generation">&epsilon;</button>
           <button class="field-btn" data-field="velocity" title="Velocity">v</button>
         </div>
+        <button id="interior-close-btn" title="Close panel">&times;</button>
       </div>
       <div id="interior-canvas-wrap">
         <canvas id="interior-canvas"></canvas>
