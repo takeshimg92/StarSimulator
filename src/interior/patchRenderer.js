@@ -19,8 +19,9 @@ export class PatchRenderer {
    * @param {HTMLCanvasElement} canvas
    * @param {number} size - canvas pixel size
    */
-  constructor(canvas, size = 512) {
+  constructor(canvas, size = 512, { particleCount } = {}) {
     this.canvas = canvas;
+    this.particleCount = particleCount || PARTICLE_COUNT;
 
     // Let the canvas fill its container; read actual CSS size
     const dpr = window.devicePixelRatio || 1;
@@ -114,8 +115,8 @@ export class PatchRenderer {
     if (!this.sim) return;
     const { Nx, Ny } = this.sim;
     this.particles = [];
-    this._prevPos = new Float64Array(PARTICLE_COUNT * 2).fill(-1);
-    for (let p = 0; p < PARTICLE_COUNT; p++) {
+    this._prevPos = new Float64Array(this.particleCount * 2).fill(-1);
+    for (let p = 0; p < this.particleCount; p++) {
       this.particles.push(this._spawnParticle());
     }
     this._trailCanvas = document.createElement('canvas');

@@ -589,7 +589,7 @@ function initInteriorPanel() {
   // --- Mobile interior panel ---
   const mobileCanvas = document.getElementById('interior-mobile-canvas');
   if (mobileCanvas) {
-    patchRendererMobile = new PatchRenderer(mobileCanvas, 400);
+    patchRendererMobile = new PatchRenderer(mobileCanvas, 400, { particleCount: 300 });
 
     // Mobile field toggle
     const mobileFieldBtns = document.querySelectorAll('#interior-mobile-field-toggle .field-btn');
@@ -761,13 +761,15 @@ async function rebuildPatchSim() {
 
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
+  const mobile = isMobileView();
+  const gridN = mobile ? 48 : 80;
   patchSim = new CartesianSim({
-    Nx: 80, Ny: 80,
+    Nx: gridN, Ny: gridN,
     Ra: info.Ra_eff,
     Pr: 0.7,
   });
 
-  patchSim.fastForward(60, 0.008);
+  patchSim.fastForward(mobile ? 30 : 60, 0.008);
 
   patchRenderer.setSim(patchSim);
   patchRenderer.setDepthInfo(depthInfo);
