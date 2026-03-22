@@ -321,11 +321,11 @@ export class PatchRenderer {
       this._drawStreamlines();
     }
 
-    // --- Layer 3: Mini-map showing box position in star ---
-    this._drawMiniMap();
-
-    // --- Layer 4: Labels and info ---
-    this._drawLabels();
+    // Skip overlays when canvas is very small (mobile thumbnail)
+    if (this.cssSize > 150) {
+      this._drawMiniMap();
+      this._drawLabels();
+    }
   }
 
   /**

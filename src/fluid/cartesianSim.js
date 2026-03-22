@@ -150,10 +150,9 @@ export class CartesianSim {
   setRa(Ra) {
     this.Ra = Ra;
     this.kappa_th = 0.04;
-    // In subcritical zones (Ra < 1708), boost viscosity to damp existing
-    // motion quickly — mimicking the high effective viscosity of radiative
-    // zones where there's no turbulent transport to sustain flow.
-    const subcriticalDamping = Ra < 1708 ? 3.0 * (1 - Ra / 1708) + 1 : 1;
+    // In subcritical zones (Ra < 1708), boost viscosity aggressively
+    // to damp existing motion within ~2-3 seconds.
+    const subcriticalDamping = Ra < 1708 ? 10.0 * (1 - Ra / 1708) + 1 : 1;
     this.nu = this.kappa_th * this.Pr * subcriticalDamping;
     this.g_eff = this.Ra * this.kappa_th * this.kappa_th * this.Pr;
   }
