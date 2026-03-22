@@ -48,6 +48,14 @@
 - [ ] Composition-dependent particle sim: species fractions update as H → He over time
 - [ ] Age display and "fast forward" / "rewind" controls
 
+### v0.3.5 — Interior cross-section enhancements
+- [ ] Theory tab section: explain Schwarzschild criterion, energy generation (PP/CNO), opacity, and mixing-length theory with LaTeX equations
+- [ ] Implementation tab section: describe the Stable Fluids (Jos Stam) solver, polar grid operators, Boussinesq approximation, and how 1D structure couples to 2D fluid sim
+- [ ] Mobile-friendly interior panel layout (responsive canvas sizing, compact field toggle)
+- [ ] Hover tooltip on interior heatmap showing field value + units at cursor position
+- [ ] Labels on heatmap: "Core", "Radiative zone", "Convective zone" with arrows
+- [ ] Animated streamlines/particles for velocity field visualization
+
 ### v0.4 — Polish & death
 - [ ] "You killed your star!" detection (degenerate matter, Chandrasekhar limit, gravitational collapse)
 - [ ] LLM-based narration panel

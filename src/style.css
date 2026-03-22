@@ -1032,6 +1032,28 @@ input[type="range"]::-moz-range-thumb {
     border-radius: 6px;
   }
 
+  /* Mobile interior panel always visible in carousel */
+  #interior-mobile-panel {
+    display: flex !important;
+    flex-direction: column;
+  }
+
+  #interior-mobile-panel canvas {
+    display: block;
+    flex: 0 0 auto;
+    min-height: 0;
+    width: calc(100% - 16px) !important;
+    max-height: calc(100% - 44px);
+    aspect-ratio: 1;
+    margin: 0 auto;
+    object-fit: contain;
+  }
+
+  /* Hide desktop floating panel on mobile */
+  #interior-float {
+    display: none !important;
+  }
+
   #tab-star .mini-panel canvas {
     width: 100%;
     height: 100%;
@@ -1345,4 +1367,183 @@ input[type="range"]::-moz-range-thumb {
     max-width: 220px;
     white-space: normal;
   }
+}
+
+/* =====================================================
+   Interior Cross-Section — Floating Panel
+   ===================================================== */
+
+#interior-float {
+  position: absolute;
+  bottom: 120px;
+  left: 232px;
+  width: 420px;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 6px;
+  /* prevent text selection while dragging */
+  user-select: none;
+}
+
+#interior-float-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 4px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: grab;
+}
+
+#interior-float-header:active {
+  cursor: grabbing;
+}
+
+#interior-float-header > span {
+  margin-right: auto;
+}
+
+#interior-close-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  margin-left: 4px;
+}
+
+#interior-close-btn:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+#interior-field-toggle {
+  display: flex;
+  gap: 2px;
+}
+
+.field-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  font-family: 'Inter', system-ui, sans-serif;
+  padding: 2px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.field-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.field-btn.active {
+  background: rgba(255, 200, 80, 0.25);
+  border-color: rgba(255, 200, 80, 0.5);
+  color: rgba(255, 220, 120, 0.95);
+}
+
+#interior-canvas-wrap {
+  position: relative;
+  overflow: hidden;
+}
+
+#interior-float canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 4px;
+}
+
+#interior-resize-grip {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  /* small triangle grip indicator */
+  background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.2) 50%);
+  border-radius: 0 0 8px 0;
+}
+
+#interior-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 200, 80, 0.8);
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  border-radius: 4px;
+}
+
+/* Mobile interior panel controls */
+#interior-mobile-controls {
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#interior-mobile-field-toggle {
+  display: flex;
+  gap: 2px;
+}
+
+.interior-depth-mobile {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  flex: 1;
+}
+
+.interior-depth-mobile input[type="range"] {
+  flex: 1;
+  height: 3px;
+  accent-color: rgba(255, 200, 80, 0.7);
+}
+
+/* Hide mobile interior panel on desktop */
+#interior-mobile-panel {
+  display: none;
+}
+
+#interior-depth-control {
+  padding: 4px 6px 2px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#interior-depth-control label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#interior-depth-slider {
+  flex: 1;
+  height: 3px;
+  accent-color: rgba(255, 200, 80, 0.7);
+}
+
+.interior-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  margin-left: 8px;
 }

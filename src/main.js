@@ -1,4 +1,4 @@
-import { initRenderer, updateStarAppearance, setSunglasses, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup, getScaleBarInfo, setOnFrameCallback, triggerEndOfLife, getZoneStructure, getRemnantType, setSpotActivity, setGranulationScale, setLightMode } from './star/renderer.js';
+import { initRenderer, updateStarAppearance, setSunglasses, unfreezeStar, setStarfieldSpeed, setSliceView, setCrossSectionProfiles, getCamera, getStarMesh, getCurrentScale, getCrossSectionGroup, getScaleBarInfo, setOnFrameCallback, triggerEndOfLife, getZoneStructure, getRemnantType, setSpotActivity, setGranulationScale, setLightMode, setSchwarzschildZones } from './star/renderer.js';
 import { computeProfiles } from './physics/stellar.js';
 import { constants } from './physics/constants.js';
 import { createSliders } from './ui/sliders.js';
@@ -9,6 +9,9 @@ import { initEquationDisplay } from './ui/equations.js';
 import { initImplementationPanel } from './ui/implementation.js';
 import * as evolution from './physics/evolution.js';
 import { loadTracks } from './physics/mistTracks.js';
+import { computeInteriorModel } from './physics/interiorModel.js';
+import { CartesianSim } from './fluid/cartesianSim.js';
+import { PatchRenderer } from './interior/patchRenderer.js';
 import * as THREE from 'three';
 import 'katex/dist/katex.min.css';
 
@@ -18,6 +21,16 @@ let lastFrameTime = 0;
 let lastCompositionUpdate = 0;
 const COMPOSITION_UPDATE_INTERVAL = 2000;
 let lastProfiles = null; // cached for hover tooltip
+
+// Interior cross-section state
+let patchRenderer = null;       // desktop floating panel
+let patchRendererMobile = null;  // mobile carousel panel
+let patchSim = null;
+let interiorModel = null;
+let interiorActive = false;
+let mobileInteriorVisible = false; // true when interior panel is scrolled into view on mobile
+let lastInteriorMass = null;
+let currentDepthFrac = 0.85;
 
 let suppressHydrogenSync = false;
 
@@ -88,6 +101,19 @@ function onParametersChanged({ mass, radius, temperature, hydrogen }, { wobble =
     Yc: comp.Y_core,
   });
   evolution.setLuminosity(profiles.L);
+
+  // Compute Schwarzschild zones for the 3D slice view
+  try {
+    const im = computeInteriorModel(mass);
+    setSchwarzschildZones({
+      zoneBoundaries: im.zoneBoundaries,
+      coreConvective: im.coreConvective,
+    });
+  } catch (e) {
+    // Don't let interior model errors break the main render loop
+    console.warn('Interior model error for mass=' + mass, e);
+  }
+
   updateStarAppearance(temperature, radius, profiles.L, { wobble });
 
   updateParticleTemp(profiles.Tc);
@@ -462,6 +488,444 @@ function timeEvolutionLoop(now) {
   }
 }
 
+function initInteriorPanel() {
+  const canvas = document.getElementById('interior-canvas');
+  if (!canvas) return;
+
+  patchRenderer = new PatchRenderer(canvas, 512);
+
+  // Field toggle buttons
+  const fieldButtons = document.querySelectorAll('#interior-field-toggle .field-btn');
+  fieldButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      fieldButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      if (patchRenderer) patchRenderer.setField(btn.dataset.field);
+    });
+  });
+
+  // Streamlines toggle
+  const streamlinesToggle = document.getElementById('interior-streamlines-toggle');
+  if (streamlinesToggle) {
+    streamlinesToggle.addEventListener('change', (e) => {
+      if (patchRenderer) patchRenderer.setShowStreamlines(e.target.checked);
+    });
+  }
+
+  // Depth slider
+  const depthSlider = document.getElementById('interior-depth-slider');
+  const depthLabel = document.getElementById('interior-depth-label');
+  if (depthSlider) {
+    depthSlider.addEventListener('input', (e) => {
+      // Slider 0-100 maps to r/R = 0.99 (surface) down to 0.05 (near center)
+      const val = parseInt(e.target.value);
+      currentDepthFrac = 0.99 - (val / 100) * 0.94;
+      if (depthLabel) depthLabel.textContent = `r/R = ${currentDepthFrac.toFixed(2)}`;
+      // Force recompute of the patch sim
+      rebuildPatchSim();
+    });
+  }
+
+  // --- Draggable + resizable panel ---
+  const panel = document.getElementById('interior-float');
+  const header = document.getElementById('interior-float-header');
+  const grip = document.getElementById('interior-resize-grip');
+  if (!panel || !header || !grip) return;
+
+  let dragging = false, resizing = false;
+  let dragStartX, dragStartY, panelStartX, panelStartY;
+  let resizeStartX, resizeStartW;
+
+  // Convert initial bottom/left positioning to top/left so drag is simple
+  function ensureTopLeft() {
+    if (panel.style.top) return; // already converted
+    const rect = panel.getBoundingClientRect();
+    panel.style.top = rect.top + 'px';
+    panel.style.left = rect.left + 'px';
+    panel.style.bottom = 'auto';
+  }
+
+  // Drag via header
+  header.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.field-btn') || e.target.closest('#interior-close-btn')) return; // don't drag when clicking buttons
+    ensureTopLeft();
+    dragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    panelStartX = panel.offsetLeft;
+    panelStartY = panel.offsetTop;
+    header.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  header.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    panel.style.left = (panelStartX + e.clientX - dragStartX) + 'px';
+    panel.style.top = (panelStartY + e.clientY - dragStartY) + 'px';
+  });
+
+  header.addEventListener('pointerup', () => { dragging = false; });
+  header.addEventListener('pointercancel', () => { dragging = false; });
+
+  // Resize via grip (width only; height follows via aspect-ratio on canvas)
+  grip.addEventListener('pointerdown', (e) => {
+    ensureTopLeft();
+    resizing = true;
+    resizeStartX = e.clientX;
+    resizeStartW = panel.offsetWidth;
+    grip.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  grip.addEventListener('pointermove', (e) => {
+    if (!resizing) return;
+    const newW = Math.max(180, resizeStartW + e.clientX - resizeStartX);
+    panel.style.width = newW + 'px';
+  });
+
+  grip.addEventListener('pointerup', () => { resizing = false; });
+  grip.addEventListener('pointercancel', () => { resizing = false; });
+
+  // --- Mobile interior panel ---
+  const mobileCanvas = document.getElementById('interior-mobile-canvas');
+  if (mobileCanvas) {
+    patchRendererMobile = new PatchRenderer(mobileCanvas, 400);
+
+    // Mobile field toggle
+    const mobileFieldBtns = document.querySelectorAll('#interior-mobile-field-toggle .field-btn');
+    mobileFieldBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        mobileFieldBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        if (patchRendererMobile) patchRendererMobile.setField(btn.dataset.field);
+      });
+    });
+
+    // Mobile depth slider
+    const mobileDepthSlider = document.getElementById('interior-mobile-depth-slider');
+    const mobileDepthLabel = document.getElementById('interior-mobile-depth-label');
+    if (mobileDepthSlider) {
+      mobileDepthSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        currentDepthFrac = 0.99 - (val / 100) * 0.94;
+        if (mobileDepthLabel) mobileDepthLabel.textContent = currentDepthFrac.toFixed(2);
+        // Sync desktop slider
+        const desktopSlider = document.getElementById('interior-depth-slider');
+        const desktopLabel = document.getElementById('interior-depth-label');
+        if (desktopSlider) desktopSlider.value = val;
+        if (desktopLabel) desktopLabel.textContent = `r/R = ${currentDepthFrac.toFixed(2)}`;
+        rebuildPatchSim();
+      });
+    }
+  }
+}
+
+function setInteriorActive(active) {
+  if (isMobileView()) {
+    // On mobile, sim is gated by mobileInteriorVisible (IntersectionObserver),
+    // not interiorActive. Just scroll to the panel if activating.
+    if (active) {
+      lastInteriorMass = null;
+      const mobilePanel = document.getElementById('interior-mobile-panel');
+      if (mobilePanel) {
+        requestAnimationFrame(() => mobilePanel.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' }));
+      }
+    }
+    return;
+  }
+
+  // Desktop: interiorActive gates the sim + panel visibility
+  interiorActive = active;
+  const floatPanel = document.getElementById('interior-float');
+  if (floatPanel) {
+    floatPanel.style.display = active ? '' : 'none';
+  }
+
+  if (active) {
+    lastInteriorMass = null;
+    if (sliderControls) {
+      updateInterior(sliderControls.getValues().mass);
+    }
+  }
+}
+
+/**
+ * Compute local patch parameters at a given depth.
+ *
+ * The effective Rayleigh number for the 2D sim is derived from ∇_rad/∇_ad,
+ * NOT from the physical Ra (which is ~10¹⁰-10¹⁵ everywhere in a star).
+ *
+ * Physical stellar Ra is always supercritical because viscosity is tiny.
+ * What determines whether convection occurs is the Schwarzschild criterion:
+ * ∇_rad > ∇_ad. The Boussinesq box model doesn't capture subadiabatic
+ * stratification, so we translate the 1D physics into an effective Ra:
+ *
+ *   ∇_rad/∇_ad < 1 (radiative): Ra_eff < Ra_crit → stable
+ *   ∇_rad/∇_ad > 1 (convective): Ra_eff > Ra_crit → convection
+ *
+ * The mapping provides a smooth transition at the boundary.
+ */
+function computeLocalPatchParams(model, rFrac) {
+  const { G, R_sun } = constants;
+  const R = model.radius * R_sun;
+
+  const idx = Math.min(model.N - 1, Math.round(rFrac * (model.N - 1)));
+  const rho = model.rho[idx];
+  const T = model.T[idx];
+  const P = model.P[idx];
+  const m = model.mEnclosed[idx];
+  const r = rFrac * R;
+  const nabla_rad = model.nabla_rad[idx];
+  const NABLA_AD = 0.4;
+
+  if (rho < 1e-10 || T < 100 || r < 1e3) {
+    return { Ra_eff: 0, H_P_km: 1, boxSize_km: 1, T_local: T, rho_local: rho, isConvective: false, superadiabatic: 0 };
+  }
+
+  const g = G * m / (r * r);
+  const H_P = P / (rho * g);
+
+  // Superadiabatic ratio: how far above (or below) the convective threshold
+  const ratio = nabla_rad / NABLA_AD;
+
+  // Map to effective Ra for the Boussinesq sim.
+  //
+  // Above the Schwarzschild boundary, convective velocity scales as
+  //   v_conv ∝ √(∇_rad - ∇_ad)   (mixing-length theory)
+  // Since kinetic energy ~ v² ~ Ra (in the sim), Ra should scale as
+  //   Ra_eff ∝ (∇_rad - ∇_ad)  →  ∝ (ratio - 1)
+  // but we use a square-root ramp near the boundary for a gradual
+  // onset, transitioning to linear growth further in:
+  //
+  //   ratio = 0.0 → Ra_eff ≈ 0
+  //   ratio = 1.0 → Ra_eff = 1700 (critical)
+  //   ratio = 1.1 → Ra_eff ≈ 3400 (gentle onset, √ scaling)
+  //   ratio = 2.0 → Ra_eff ≈ 7400
+  //   ratio = 10  → Ra_eff ≈ 18700
+  //   ratio = 100 → Ra_eff ≈ 53000
+  let Ra_eff;
+  if (ratio <= 1) {
+    Ra_eff = ratio * 1700;
+  } else {
+    // Logarithmic ramp above critical — much gentler than √ or linear.
+    // log(1 + x) grows very slowly, preventing the dramatic jump between
+    // adjacent r/R values where ∇_rad changes by 5-10× per 0.01 in r/R.
+    Ra_eff = 1700 + 3000 * Math.log(1 + (ratio - 1) * 2);
+  }
+  Ra_eff = Math.min(Ra_eff, 30000); // cap lower for smoother visual
+
+  return {
+    Ra_eff,
+    H_P,
+    H_P_km: H_P / 1000,
+    g_local: g,
+    T_local: T,
+    rho_local: rho,
+    boxSize_km: (3.5 * H_P) / 1000,
+    isConvective: model.isConvective[idx],
+    superadiabatic: ratio,
+  };
+}
+
+let _rebuildPending = false;
+
+async function rebuildPatchSim() {
+  if (!interiorModel) return;
+  if (!patchRenderer && !patchRendererMobile) return;
+
+  const info = computeLocalPatchParams(interiorModel, currentDepthFrac);
+  const depthInfo = {
+    rFrac: currentDepthFrac,
+    H_P_km: info.H_P_km,
+    boxSize_km: info.boxSize_km,
+    T: info.T_local,
+    rho: info.rho_local,
+    isConvective: info.isConvective,
+    Ra: info.Ra_eff,
+  };
+
+  if (patchSim) {
+    // Sim already exists — just update Ra and let the flow evolve smoothly.
+    patchSim.setRa(info.Ra_eff);
+    if (patchRenderer) patchRenderer.setDepthInfo(depthInfo);
+    if (patchRendererMobile) patchRendererMobile.setDepthInfo(depthInfo);
+    return;
+  }
+
+  // First creation — full init with loading indicator
+  if (_rebuildPending) return;
+  _rebuildPending = true;
+
+  const loadingEl = document.getElementById('interior-loading');
+  if (loadingEl) loadingEl.style.display = '';
+
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  patchSim = new CartesianSim({
+    Nx: 80, Ny: 80,
+    Ra: info.Ra_eff,
+    Pr: 0.7,
+  });
+
+  patchSim.fastForward(60, 0.008);
+
+  patchRenderer.setSim(patchSim);
+  patchRenderer.setDepthInfo(depthInfo);
+  if (patchRendererMobile) {
+    patchRendererMobile.setSim(patchSim);
+    patchRendererMobile.setDepthInfo(depthInfo);
+  }
+
+  if (loadingEl) loadingEl.style.display = 'none';
+  _rebuildPending = false;
+}
+
+function _dead() { /*
+  const gravity = new Float64Array(Nr);
+  const dr = (rOuter - rInner) / Nr;
+  for (let i = 0; i < Nr; i++) {
+    const rPhys = (rInner + (i + 0.5) * dr) * R;
+    gravity[i] = rPhys > 0 ? G * mEncInterp[i] / (rPhys * rPhys) : 0;
+  }
+  // Normalize so peak = 10 (sim units)
+  let gMax = 0;
+  for (let i = 0; i < Nr; i++) if (gravity[i] > gMax) gMax = gravity[i];
+  if (gMax > 0) for (let i = 0; i < Nr; i++) gravity[i] *= 10 / gMax;
+
+  // --- Thermal diffusivity: κ_th(r) = 16σT³ / (3κρ²cₚ) ---
+  //
+  // Computed directly from the 1D model's physical quantities.
+  // Where opacity κ is low (radiative zone): κ_th is high → heat
+  // diffuses efficiently → no convection.
+  // Where opacity κ is high (convective zone): κ_th is low → heat
+  // is trapped → convection develops naturally.
+  //
+  const { sigma: sig, k_B, m_p } = constants;
+  const kappaInterp = interpToSimGrid(model.rFrac, model.kappa, Nr, rInner, rOuter);
+  const rhoInterp = interpToSimGrid(model.rFrac, model.rho, Nr, rInner, rOuter);
+  const TInterp = interpToSimGrid(model.rFrac, model.T, Nr, rInner, rOuter);
+
+  const thermalDiffPhys = new Float64Array(Nr);
+  const cp = 5 * k_B / (2 * model.mu * m_p); // cₚ for ideal monatomic gas
+
+  for (let i = 0; i < Nr; i++) {
+    const T3 = TInterp[i] * TInterp[i] * TInterp[i];
+    const denom = 3 * kappaInterp[i] * rhoInterp[i] * rhoInterp[i] * cp;
+    thermalDiffPhys[i] = denom > 0 ? (16 * sig * T3) / denom : 1e-10;
+  }
+
+  // Normalize to sim units: scale so the profile spans a usable range.
+  // The ratio between max (radiative) and min (convective) κ_th is
+  // preserved — this IS the physics that determines whether convection
+  // develops or not.
+  let kthMax = 0, kthMin = Infinity;
+  for (let i = 0; i < Nr; i++) {
+    if (thermalDiffPhys[i] > kthMax) kthMax = thermalDiffPhys[i];
+    if (thermalDiffPhys[i] > 0 && thermalDiffPhys[i] < kthMin) kthMin = thermalDiffPhys[i];
+  }
+  // Scale so max κ_th = 1.0 (sim units)
+  const thermalDiff = new Float64Array(Nr);
+  const kthScale = kthMax > 0 ? 1.0 / kthMax : 1;
+  for (let i = 0; i < Nr; i++) {
+    thermalDiff[i] = Math.max(1e-6, thermalDiffPhys[i] * kthScale);
+  }
+
+  // --- Viscosity: uniform ---
+  const viscosity = new Float64Array(Nr).fill(0.005);
+
+  // --- Temperature profile: conduction equilibrium ---
+  // Solve d/dr(r · κ_th(r) · dT/dr) = 0 with T(rInner)=1, T(rOuter)=0.
+  // This is the temperature profile that the radiative zone naturally
+  // maintains. Perturbations from this profile drive buoyancy.
+  // In convective zones (low κ_th), perturbations persist and grow.
+  // In radiative zones (high κ_th), perturbations are quickly diffused back.
+  //
+  // Integration: dT/dr = C / (r · κ_th(r))
+  //   T(r) = 1 - (integral from rInner to r) / (integral from rInner to rOuter)
+  const integral = new Float64Array(Nr);
+  integral[0] = 0;
+  for (let i = 1; i < Nr; i++) {
+    const r = rInner + (i - 0.5) * dr;
+    const kth = thermalDiff[i - 1] || 0.01;
+    integral[i] = integral[i - 1] + dr / (r * kth);
+  }
+  const totalIntegral = integral[Nr - 1] || 1;
+  const T_profile = new Float64Array(Nr);
+  for (let i = 0; i < Nr; i++) {
+    T_profile[i] = 1.0 - integral[i] / totalIntegral;
+  }
+
+  // --- MLT velocity seed ---
+  const v_raw = interpToSimGrid(model.rFrac, model.v_conv, Nr, rInner, rOuter);
+  let vMax = 0;
+  for (let i = 0; i < Nr; i++) if (v_raw[i] > vMax) vMax = v_raw[i];
+  const v_conv_seed = new Float64Array(Nr);
+  if (vMax > 0) for (let i = 0; i < Nr; i++) v_conv_seed[i] = v_raw[i] / vMax;
+
+*/ }
+
+function isMobileView() {
+  return window.innerWidth <= 900;
+}
+
+function updateInterior(mass) {
+  if (!patchRenderer && !patchRendererMobile) return;
+  // On desktop, needs interiorActive; on mobile, only run when scrolled into view
+  if (!interiorActive && !mobileInteriorVisible) return;
+
+  // Recompute interior model if mass changed
+  if (mass !== lastInteriorMass) {
+    lastInteriorMass = mass;
+    interiorModel = computeInteriorModel(mass);
+
+    // Sync Schwarzschild zones to 3D slice view
+    setSchwarzschildZones({
+      zoneBoundaries: interiorModel.zoneBoundaries,
+      coreConvective: interiorModel.coreConvective,
+    });
+
+    patchRenderer.setModel(interiorModel);
+    if (patchRendererMobile) patchRendererMobile.setModel(interiorModel);
+
+    // Auto-set depth to the most interesting convective region
+    const zb = interiorModel.zoneBoundaries;
+    if (interiorModel.coreConvective && zb.length > 0) {
+      // Massive star: convective core — default to mid-core
+      currentDepthFrac = zb[0] * 0.5;
+    } else if (zb.length > 0) {
+      // Solar-type: convective envelope — default to just inside the boundary
+      currentDepthFrac = Math.min(0.98, zb[zb.length - 1] + 0.02);
+    } else {
+      currentDepthFrac = 0.85;
+    }
+
+    // Sync the slider UI
+    // Sync both desktop and mobile sliders
+    const sliderVal = Math.round((0.99 - currentDepthFrac) / 0.94 * 100);
+    for (const id of ['interior-depth-slider', 'interior-mobile-depth-slider']) {
+      const el = document.getElementById(id);
+      if (el) el.value = sliderVal;
+    }
+    for (const [id, fmt] of [['interior-depth-label', `r/R = ${currentDepthFrac.toFixed(2)}`],
+                              ['interior-mobile-depth-label', currentDepthFrac.toFixed(2)]]) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = fmt;
+    }
+
+    patchSim = null; // force full rebuild for new star
+    rebuildPatchSim();
+  }
+
+  // Step the simulation
+  if (patchSim) {
+    patchSim.step(0.002);
+  }
+
+  // Render both desktop and mobile
+  patchRenderer.render();
+  if (patchRendererMobile) patchRendererMobile.render();
+}
+
 async function init() {
   // Load MIST tracks in background (non-blocking — app works without them)
   loadTracks().then(() => {
@@ -501,6 +965,9 @@ async function init() {
   const implPanel = document.getElementById('implementation-panel');
   initImplementationPanel(implPanel);
 
+  // Interior cross-section panel
+  initInteriorPanel();
+
   // Tabs + expand buttons
   initTabs();
   initExpandButtons();
@@ -518,6 +985,21 @@ async function init() {
   });
   document.getElementById('slice-toggle').addEventListener('change', (e) => {
     setSliceView(e.target.checked);
+    if (e.target.checked) {
+      setInteriorActive(true);
+    } else {
+      // Hide desktop panel when slice is turned off
+      interiorActive = false;
+      const floatPanel = document.getElementById('interior-float');
+      if (floatPanel) floatPanel.style.display = 'none';
+    }
+  });
+
+  // Close button on desktop interior panel — hides panel and stops sim, but keeps slice view
+  document.getElementById('interior-close-btn').addEventListener('click', () => {
+    interiorActive = false;
+    const floatPanel = document.getElementById('interior-float');
+    if (floatPanel) floatPanel.style.display = 'none';
   });
 
   // Reset button — force true reload (bypass mobile bfcache)
@@ -543,6 +1025,15 @@ async function init() {
   // Start time evolution loop
   lastFrameTime = performance.now();
   requestAnimationFrame(timeEvolutionLoop);
+
+  // Interior heatmap render loop (runs when interior tab is active)
+  function interiorRenderLoop() {
+    requestAnimationFrame(interiorRenderLoop);
+    if (sliderControls && (interiorActive || mobileInteriorVisible)) {
+      updateInterior(sliderControls.getValues().mass);
+    }
+  }
+  requestAnimationFrame(interiorRenderLoop);
 
   // Resize handling — canvas resize functions skip when tab is hidden (0×0),
   // so a deferred resize is triggered when switching back to the star tab.
@@ -779,9 +1270,15 @@ function initMobile(sliderControls) {
   const dots = document.querySelectorAll('#carousel-dots .dot');
   const panels = tabStar ? tabStar.querySelectorAll('.mini-panel') : [];
 
-  if (tabStar && panels.length === 3 && dots.length === 3) {
+  const mobileInteriorPanel = document.getElementById('interior-mobile-panel');
+  if (tabStar && panels.length >= 3 && dots.length >= 3) {
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
+        // Track whether the interior panel is currently visible in the carousel
+        if (entry.target === mobileInteriorPanel) {
+          mobileInteriorVisible = entry.isIntersecting && entry.intersectionRatio > 0.5;
+        }
+
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
           const idx = Array.from(panels).indexOf(entry.target);
           dots.forEach((d, i) => d.classList.toggle('active', i === idx));
@@ -801,6 +1298,16 @@ function initMobile(sliderControls) {
     });
 
     panels.forEach(p => observer.observe(p));
+
+    // Default carousel to HR diagram (second panel) on mobile
+    const hrPanel = document.getElementById('hr-panel');
+    if (hrPanel && isMobileView()) {
+      requestAnimationFrame(() => {
+        hrPanel.scrollIntoView({ block: 'nearest', inline: 'start' });
+        // Set HR dot as active (index 1)
+        dots.forEach((d, i) => d.classList.toggle('active', i === 1));
+      });
+    }
 
     // Initial render of first visible panel after layout settles
     setTimeout(() => {

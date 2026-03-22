@@ -694,7 +694,23 @@ function addRandomStarfield() {
  * Returns { coreR, convInner, convOuter, coreConvective, shells, coreColor }
  */
 function getZoneStructure(mass, evoState) {
-  // Fallback: mass-only (static mode, no MIST data)
+  // Use Schwarzschild-derived boundaries when available (static mode or MS phase)
+  if (csSchwarzschildZones) {
+    const sz = csSchwarzschildZones;
+    const isMS = !evoState || evoState.phase === undefined || evoState.phase <= 0;
+    if (isMS) {
+      return {
+        coreR: sz.coreConvective ? (sz.zoneBoundaries[0] || 0.15) : 0.08,
+        convInner: sz.coreConvective ? 0 : (sz.zoneBoundaries[0] || 0.9),
+        convOuter: sz.coreConvective ? (sz.zoneBoundaries[0] || 0.15) : 1.0,
+        coreConvective: sz.coreConvective,
+        shells: [],
+        coreColor: { r: 1, g: 1, b: 0.94 },
+      };
+    }
+  }
+
+  // Fallback: mass-only (static mode, no MIST data, no Schwarzschild)
   if (!evoState || evoState.phase === undefined) {
     if (mass >= 1.3) {
       const coreConvR = Math.min(0.5, 0.2 + 0.1 * (mass - 1.3));
@@ -1089,6 +1105,13 @@ function drawCrossSection(time) {
 export { getZoneStructure };
 export function getRemnantType() { return remnantType; }
 
+// Override zone boundaries with physics-derived Schwarzschild values
+let csSchwarzschildZones = null;
+
+export function setSchwarzschildZones(zones) {
+  csSchwarzschildZones = zones;
+}
+
 export function setCrossSectionProfiles(profiles, mass, evolutionState) {
   csProfiles = profiles;
   if (mass !== undefined) csMass = mass;
@@ -1160,18 +1183,33 @@ function animate() {
   const currentCamDist = camera.position.length();
 
   // Update orbit controls limits
-  controls.minDistance = Math.max(1.5, scale * 1.2);
+  // Never constrain minDistance below the camera's current position —
+  // this ensures the user can ALWAYS zoom out, even from inside the star.
+  const camDist = camera.position.length();
+  controls.minDistance = Math.min(camDist, Math.max(1.5, scale * 1.2));
   controls.maxDistance = 600;
 
-  // Push camera out if it's inside the star (can happen on fast mass increase)
-  const camDist = camera.position.length();
-  if (camDist < scale * 1.3) {
-    const pushDist = scale * 2.5;
-    camera.position.normalize().multiplyScalar(pushDist);
+  // Show overlay when inside the star
+  const insideStar = camDist < scale * 1.2;
+  let insideOverlay = document.getElementById('inside-star-overlay');
+  if (insideStar) {
+    if (!insideOverlay) {
+      insideOverlay = document.createElement('div');
+      insideOverlay.id = 'inside-star-overlay';
+      insideOverlay.style.cssText = 'position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;pointer-events:none;transition:opacity 0.3s';
+      insideOverlay.innerHTML = '<div style="color:rgba(80,60,30,0.9);font:14px Inter,sans-serif;text-align:center;text-shadow:0 0 20px rgba(255,200,100,0.5)">You are inside the star<br><span style="font-size:11px;opacity:0.6">Scroll to zoom out, or reduce the mass</span></div>';
+      document.getElementById('viewport').appendChild(insideOverlay);
+    }
+    const depth = Math.max(0, 1.2 - camDist / scale);
+    insideOverlay.style.background = `rgba(255,240,200,${Math.min(0.9, depth * 2)})`;
+    insideOverlay.style.opacity = '1';
+  } else if (insideOverlay) {
+    insideOverlay.style.opacity = '0';
+    setTimeout(() => { if (insideOverlay.style.opacity === '0') insideOverlay.remove(); }, 300);
   }
 
   // Bloom strength — reduce when zoomed in so surface detail is visible
-  const dist = camera.position.length();
+  const dist = camDist;
   const distFactor = Math.max(0.0, Math.min(1.0, (dist - scale * 2) / (scale * 4)));
   bloomPass.strength = current.bloom * distFactor;
 
@@ -1279,7 +1317,7 @@ export function updateStarAppearance(temperature, radius, luminosity, { wobble =
   // Radius: tight halo for dim stars, wide wash for luminous ones
   // 0.1 at logL≤0, up to 0.8 for supergiants
   if (bloomPass) {
-    bloomPass.radius = Math.max(0.1, Math.min(0.8, 0.15 + Math.max(0, logL) * 0.11));
+    bloomPass.radius = Math.max(0.1, Math.min(0.4, 0.12 + Math.max(0, logL) * 0.04));
     // Lower threshold for high-L so the glow spreads beyond just the star
     bloomPass.threshold = Math.max(0.05, 0.3 - Math.max(0, logL) * 0.04);
   }

@@ -44,8 +44,8 @@ The answer is <b>pressure</b>. The gas is so hot that its outward pressure exact
     after: `A star can be very luminous either because it is very hot (blue giants), very large (red giants), or both. The <b>H-R diagram</b> in the simulator plots luminosity against surface temperature — this is the single most important diagram in stellar astrophysics, as a star's position on it reveals its evolutionary state.
 
 Luminosity increases outward from the core as nuclear reactions add energy:`,
-    equation2: String.raw`\frac{dL}{dr} = 4\pi r^2 \rho(r)\,\varepsilon(r)`,
-    after2: `Here $\\varepsilon$ is the energy generated per unit mass. For main-sequence stars, this comes from fusing hydrogen into helium — via the <b>PP chain</b> in low-mass stars or the <b>CNO cycle</b> in high-mass stars.`,
+    equation2: String.raw`\frac{dL}{dr} = 4\pi r^2 \rho(r)\,\varepsilon(r) \quad [\text{W/m}]`,
+    after2: `Here $\\varepsilon$ [W/kg] is the energy generated per unit mass. For main-sequence stars, this comes from fusing hydrogen into helium — via the <b>PP chain</b> in low-mass stars or the <b>CNO cycle</b> in high-mass stars.`,
     refs: [
       { text: 'Wikipedia: Stefan-Boltzmann law', url: 'https://en.wikipedia.org/wiki/Stefan%E2%80%93Boltzmann_law' },
       { text: 'Wikipedia: Hertzsprung-Russell diagram', url: 'https://en.wikipedia.org/wiki/Hertzsprung%E2%80%93Russell_diagram' },
@@ -55,8 +55,8 @@ Luminosity increases outward from the core as nuclear reactions add energy:`,
     title: 'How Energy Gets Out: Radiation vs. Convection',
     body: `Energy produced in the core must travel outward to the surface. There are two ways this happens:
 <ul><li><b>Radiation:</b> photons bounce from atom to atom, slowly diffusing outward. In radiative zones, the temperature gradient is:</li></ul>`,
-    equation: String.raw`\frac{dT}{dr} = -\frac{3\,\kappa\,\rho\,L}{64\pi\sigma\,r^2\,T^3}`,
-    after: `where $\\kappa$ is the opacity — how effectively the gas blocks light.
+    equation: String.raw`\frac{dT}{dr} = -\frac{3\,\kappa\,\rho\,L}{64\pi\sigma\,r^2\,T^3} \quad [\text{K/m}]`,
+    after: `where $\\kappa$ [m$^2$/kg] is the opacity — how effectively the gas blocks light.
 <ul><li><b>Convection:</b> when the temperature gradient becomes too steep (the <b>Schwarzschild criterion</b>), radiation can't carry the energy fast enough. Instead, hot gas rises and cool gas sinks — like a boiling pot of water. The granulation pattern visible on the star's surface is the top of these convection cells.</li></ul>
 
 For Sun-like stars: the core is radiative, and the outer ~30% is convective. For massive stars ($M > 1.3\\,M_\\odot$), it's the reverse: the core is convective and the envelope is radiative.
@@ -92,13 +92,13 @@ In the simulator, you can toggle the slice view to show the convective and radia
   },
   {
     title: 'Nuclear Fusion: PP Chain vs. CNO Cycle',
-    body: `Main-sequence stars fuse hydrogen into helium via two pathways. The <b>proton-proton (PP) chain</b> fuses protons directly, while the <b>CNO cycle</b> uses carbon, nitrogen, and oxygen as catalysts. Their rates depend very differently on temperature:`,
-    equation: String.raw`\varepsilon_{\text{PP}} \propto \rho\,X^2\,T^4, \qquad \varepsilon_{\text{CNO}} \propto \rho\,X\,X_{\text{CNO}}\,T^{16}`,
-    after: `where $X$ is the hydrogen mass fraction and $X_{CNO}$ is the mass fraction of CNO elements. The CNO cycle's steep $T^{16}$ dependence means it completely dominates at high temperatures, while the gentler PP chain wins at lower temperatures. The crossover occurs at roughly $T \\approx 17$ million K.
-
-For the Sun ($T_c \\approx 15$ MK), the PP chain produces $\\sim$98% of the energy. Stars more massive than $\\sim 1.3\\,M_\\odot$ have hotter cores where the CNO cycle takes over.
-
-The CNO cycle's extreme temperature sensitivity concentrates energy generation in a tiny central region, creating a steep temperature gradient that drives <b>convective cores</b> in massive stars.`,
+    body: `Main-sequence stars fuse hydrogen into helium via two pathways. The <b>proton-proton (PP) chain</b> fuses protons directly, while the <b>CNO cycle</b> uses carbon, nitrogen, and oxygen as catalysts. Their rates have a common structure dictated by the Gamow peak — a $T^{-2/3} \\exp(-\\tau/T^{1/3})$ dependence that captures the interplay between the Maxwell-Boltzmann tail and the quantum tunnelling probability:`,
+    equation: String.raw`\varepsilon_{\text{PP}} = C_{\text{PP}}\,\rho\,X^2\,T_9^{-2/3}\,\exp\!\left(\frac{-3.381}{T_9^{1/3}}\right) \quad [\text{W/kg}]`,
+    after: ``,
+    equation2: String.raw`\varepsilon_{\text{CNO}} = C_{\text{CNO}}\,\rho\,X\,X_{\text{CNO}}\,T_9^{-2/3}\,\exp\!\left(\frac{-15.231}{T_9^{1/3}}\right) \quad [\text{W/kg}]`,
+    after2: `where $T_9 = T / 10^9$ K. The much larger Gamow energy in the CNO exponent (15.231 vs. 3.381) reflects the higher Coulomb barrier for carbon and nitrogen nuclei, making CNO extremely temperature-sensitive. Near $T \\approx 15$ MK, local power-law fits give $\\varepsilon_{\\text{PP}} \\propto T^4$ and $\\varepsilon_{\\text{CNO}} \\propto T^{16}$, but these exponents change with temperature — the full Gamow forms above are valid across the entire main-sequence mass range.
+<br><br>
+The crossover occurs at roughly $T \\approx 17$–$18$ MK. For the Sun ($T_c \\approx 15$ MK), the PP chain produces $\\sim$98% of the energy. Stars more massive than $\\sim 1.3\\,M_\\odot$ have hotter cores where the CNO cycle takes over, concentrating energy generation in a tiny central region and driving <b>convective cores</b>.`,
     refs: [
       { text: 'Wikipedia: Proton-proton chain', url: 'https://en.wikipedia.org/wiki/Proton%E2%80%93proton_chain' },
       { text: 'Wikipedia: CNO cycle', url: 'https://en.wikipedia.org/wiki/CNO_cycle' },
@@ -137,12 +137,110 @@ The ionization energy of hydrogen ultimately determines why stars below $\\sim$1
     ],
   },
   {
+    title: 'Opacity: What Makes Stars Opaque',
+    body: `The opacity $\\kappa$ measures how effectively stellar material blocks radiation. Three sources dominate at different temperatures:
+<br><br>
+<b>Kramers' opacity</b> (free-free + bound-free absorption, $T \\sim 10^5$–$10^7$ K): photons are absorbed by free electrons passing near ions, or by ionizing bound electrons. The rate drops steeply with temperature because hotter photons are harder to absorb:`,
+    equation: String.raw`\kappa_K = 3.68 \times 10^{22}\;\rho\,T^{-3.5}\,(1+X)(Z+0.001) \quad [\text{cm}^2/\text{g}]`,
+    after: `<b>H$^-$ opacity</b> ($T \\sim 3{,}000$–$12{,}000$ K): a neutral hydrogen atom can loosely bind a second electron, forming an H$^-$ ion. This fragile ion absorbs visible and infrared photons very efficiently. Unlike Kramers' opacity, H$^-$ <i>increases</i> with temperature (more free electrons available to form H$^-$):`,
+    equation2: String.raw`\kappa_{H^-} \approx 2.5 \times 10^{-31}\;\frac{Z}{0.02}\;\rho^{1/2}\;T^{9} \quad [\text{cm}^2/\text{g}]`,
+    after2: `This steep $T^9$ dependence creates an opacity bump around $10^4$ K that is the primary driver of convective envelopes in solar-type stars.
+<br><br>
+<b>Electron scattering</b> ($T > 10^7$ K): Thomson scattering off free electrons, independent of temperature: $\\kappa_{\\text{es}} = 0.2(1+X)$ cm$^2$/g. Dominates in hot stellar cores.`,
+    refs: [
+      { text: 'Wikipedia: Kramers\' opacity law', url: 'https://en.wikipedia.org/wiki/Kramers%27_opacity_law' },
+      { text: 'Wikipedia: H-minus opacity', url: 'https://en.wikipedia.org/wiki/H-minus_opacity' },
+    ],
+  },
+  {
+    title: 'The Schwarzschild Criterion',
+    body: `Whether energy is transported by radiation or convection depends on a single comparison. The <b>radiative temperature gradient</b> — the gradient that would exist if all energy were carried by radiation — is:`,
+    equation: String.raw`\nabla_{\text{rad}} \equiv \frac{d\ln T}{d\ln P}\bigg|_{\text{rad}} = \frac{3\,\kappa\,P\,L(r)}{16\pi\,a\,c\,T^4\,G\,m(r)} \quad [\text{dimensionless}]`,
+    after: `where $a = 4\\sigma/c$ is the radiation constant. Note that $\\nabla_{\\text{rad}}$ is a <i>logarithmic</i> gradient — the ratio of fractional changes in temperature and pressure — so it is dimensionless. If it exceeds the <b>adiabatic gradient</b> $\\nabla_{\\text{ad}} = 0.4$ (for an ideal gas with $\\gamma = 5/3$), radiation cannot carry the flux — convection takes over:`,
+    equation2: String.raw`\nabla_{\text{rad}} > \nabla_{\text{ad}} \implies \text{convective}`,
+    after2: `This criterion naturally explains the zone structure of different stars:
+<ul>
+<li><b>Low-mass stars</b> ($M < 1.3\\,M_\\odot$): H$^-$ opacity creates high $\\kappa$ in the cool envelope → large $\\nabla_{\\text{rad}}$ → convective envelopes.</li>
+<li><b>Massive stars</b> ($M > 1.3\\,M_\\odot$): CNO cycle concentrates $L(r)$ in a tiny core → large $\\nabla_{\\text{rad}}$ near center → convective cores.</li>
+<li><b>Very low-mass</b> ($M < 0.35\\,M_\\odot$): opacity is high throughout → fully convective.</li>
+</ul>
+In the Interior tab, the dashed boundary lines on the heatmap are computed from this criterion — they are not placed by hand.`,
+    refs: [
+      { text: 'Wikipedia: Schwarzschild criterion', url: 'https://en.wikipedia.org/wiki/Schwarzschild_criterion' },
+    ],
+  },
+  {
+    title: 'Convective Velocity: Mixing-Length Theory',
+    body: `In convective zones, how fast does the gas flow? The standard estimate comes from <b>mixing-length theory (MLT)</b>, which models convection as blobs of gas that travel one "mixing length" $\\ell = \\alpha_{\\text{MLT}} H_P$ before dissolving:`,
+    equation: String.raw`v_{\text{conv}} \approx \left(\frac{L_{\text{conv}}}{4\pi r^2 \rho}\right)^{1/3} \left(\alpha_{\text{MLT}}\,H_P\right)^{1/3} \quad [\text{m/s}]`,
+    after: `where $H_P = P/(\\rho g)$ [m] is the pressure scale height and $\\alpha_{\\text{MLT}} \\approx 1.6$ is a dimensionless calibration parameter. For the solar convection zone, this gives velocities of $\\sim$100 m/s near the surface — consistent with observed granulation motions.
+<br><br>
+In the Interior tab, this velocity drives the speed of the animated convection cells in the 2D fluid simulation.`,
+    refs: [
+      { text: 'Wikipedia: Mixing length theory', url: 'https://en.wikipedia.org/wiki/Mixing_length_theory' },
+    ],
+  },
+  {
+    title: 'The Interior Convection Simulation',
+    body: `The Interior panel simulates convection in a small box (a few pressure scale heights across) at a user-selected depth. This is a classic <b>Rayleigh-Bénard</b> setup: a layer of fluid heated from below and cooled from above, the simplest system that exhibits thermal convection.
+<br><br>
+The simulation uses the <b>Boussinesq approximation</b> — a simplification where density variations are neglected everywhere except in the buoyancy term. This is valid when density differences are small compared to the mean density (typically $\\delta\\rho/\\rho < 10\\%$), which holds within a local patch of a few scale heights. The equations are:`,
+    equation: String.raw`\frac{\partial \vec{v}}{\partial t} + (\vec{v}\cdot\nabla)\vec{v} = -\frac{\nabla p}{\rho_0} + \nu\nabla^2\vec{v} + \alpha\,g\,\delta T\,\hat{r}`,
+    after: `The three terms on the right represent pressure gradients (which enforce incompressibility), viscous friction (which damps small-scale motion), and <b>buoyancy</b> (the engine of convection). A temperature perturbation $\\delta T$ — measured relative to the horizontal average at each height — creates a density difference: hot fluid is lighter and rises, cool fluid is heavier and sinks.
+<br><br>
+Temperature evolves via advection-diffusion:`,
+    equation2: String.raw`\frac{\partial T}{\partial t} + (\vec{v}\cdot\nabla)T = \kappa_{\text{th}}\nabla^2 T`,
+    after2: `The first term on the right, advection, is the fluid carrying heat along with it (this is convection). The second term, diffusion, is heat spreading by conduction or radiation — this smooths out temperature perturbations. The competition between these two processes, combined with buoyancy, determines whether convection occurs:
+<ul>
+<li>If diffusion wins (high $\\kappa_{\\text{th}}$, as in radiative zones where photons carry heat efficiently): perturbations are smoothed out before buoyancy can act → no flow.</li>
+<li>If buoyancy wins (high opacity, strong temperature gradient): perturbations grow into organized circulation cells → convection.</li>
+</ul>
+The single dimensionless parameter capturing this competition is the <b>Rayleigh number</b>:`,
+    refs: [
+      { text: 'Wikipedia: Boussinesq approximation (buoyancy)', url: 'https://en.wikipedia.org/wiki/Boussinesq_approximation_(buoyancy)' },
+      { text: 'Wikipedia: Rayleigh-Bénard convection', url: 'https://en.wikipedia.org/wiki/Rayleigh%E2%80%93B%C3%A9nard_convection' },
+    ],
+  },
+  {
+    title: 'The Rayleigh Number and Convective Onset',
+    body: `The Rayleigh number measures the ratio of buoyancy-driven forcing to diffusive damping:`,
+    equation: String.raw`\text{Ra} = \frac{\alpha\,g\,\Delta T\,H^3}{\nu\,\kappa_{\text{th}}}`,
+    after: `where $\\alpha$ is the thermal expansion coefficient, $g$ is gravity, $\\Delta T$ is the temperature drop across the box, $H$ is the box height, $\\nu$ is kinematic viscosity, and $\\kappa_{\\text{th}}$ is thermal diffusivity.
+<br><br>
+When $\\text{Ra}$ exceeds a critical value $\\text{Ra}_{\\text{crit}} \\approx 1708$ (for rigid boundaries), buoyancy overcomes diffusion and organized convection cells form. Below this threshold, the fluid remains still.
+<br><br>
+In the simulator, $\\text{Ra}$ is derived from the 1D stellar model at each depth:
+<ul>
+<li>$\\nabla_{\\text{rad}} / \\nabla_{\\text{ad}} < 1$ (radiative zone): Ra is subcritical → no convection</li>
+<li>$\\nabla_{\\text{rad}} / \\nabla_{\\text{ad}} > 1$ (convective zone): Ra grows logarithmically → convection cells develop</li>
+</ul>
+The mapping uses $\\text{Ra} = 1700 + 3000\\,\\ln(1 + 2(\\nabla_{\\text{rad}}/\\nabla_{\\text{ad}} - 1))$ above the Schwarzschild boundary, giving a gradual onset that matches the physical $v \\propto \\sqrt{\\nabla_{\\text{rad}} - \\nabla_{\\text{ad}}}$ scaling from mixing-length theory.`,
+    refs: [
+      { text: 'Wikipedia: Rayleigh number', url: 'https://en.wikipedia.org/wiki/Rayleigh_number' },
+    ],
+  },
+  {
+    title: 'Quasi-Static Validity',
+    body: `The interior structure equations assume time-independent equilibrium. This is justified because three very different timescales govern stellar evolution:
+<ul>
+<li><b>Dynamical</b> (free-fall): $t_{\\text{dyn}} \\sim 1/\\sqrt{G\\bar{\\rho}} \\sim 30$ minutes for the Sun. The star adjusts its hydrostatic balance this fast.</li>
+<li><b>Thermal</b> (Kelvin-Helmholtz): $t_{\\text{KH}} \\sim GM^2/(RL) \\sim 10^7$ years. How long to radiate away gravitational energy.</li>
+<li><b>Nuclear</b>: $t_{\\text{nuc}} \\sim Mc^2 X\\eta / L \\sim 10^{10}$ years. How long the fuel lasts.</li>
+</ul>
+Since $t_{\\text{dyn}} \\ll t_{\\text{KH}} \\ll t_{\\text{nuc}}$, the star is always in near-perfect mechanical and thermal equilibrium during main-sequence evolution. Composition changes (H→He) happen so slowly that the star continuously adjusts — a sequence of quasi-static equilibrium models. This is exactly how professional stellar evolution codes (MESA, for example) work.
+<br><br>
+The approximation breaks down only during violent events (helium flash, core collapse) or rapid post-MS phases — which are outside the scope of the Interior heatmap view.`,
+    refs: [
+      { text: 'Padmanabhan — Theoretical Astrophysics Vol. II, Ch. 2', url: 'https://doi.org/10.1017/CBO9780511840159' },
+    ],
+  },
+  {
     title: 'Life on the Main Sequence',
     body: `Stars spend most of their lives on the <b>main sequence</b>, steadily fusing hydrogen into helium. The core burns fuel while the outer envelope keeps its original composition.
 
 As core hydrogen depletes, the <b>mean molecular weight</b> $\\mu$ increases:`,
-    equation: String.raw`\mu = \frac{1}{2X + \tfrac{3}{4}Y + \tfrac{1}{2}Z}`,
-    after: `where $X$ is the hydrogen mass fraction, $Y$ is the helium mass fraction, and $Z$ is the 'metal' mass fraction (in astrophysics, elements heavier than helium are all called metals). Higher $\\mu$ means the gas needs less pressure support per particle, so the core contracts slightly and heats up. The star slowly brightens and drifts upward on the H-R diagram:`,
+    equation: String.raw`\mu = \frac{1}{2X + \tfrac{3}{4}Y + \tfrac{1}{2}Z} \quad [\text{in units of}\; m_p]`,
+    after: `where $X$, $Y$, $Z$ are the mass fractions of hydrogen, helium, and metals respectively (in astrophysics, elements heavier than helium are all called "metals"). The mean molecular weight $\\mu$ is measured in units of the proton mass $m_p$: it gives the average mass per free particle in the plasma, so the ideal gas law reads $P = \\rho k_B T / (\\mu m_p)$. Higher $\\mu$ means fewer particles per unit mass, so less pressure support — the core contracts slightly and heats up. The star slowly brightens and drifts upward on the H-R diagram:`,
     equation2: String.raw`L \propto \mu_{\text{core}}^{1.1}, \qquad R \propto \mu_{\text{eff}}^{0.85}`,
     after2: `For a solar-mass star, this means a factor of $\\sim$2 increase in luminosity over $\\sim$10 billion years. Our Sun is about halfway through this journey.
 

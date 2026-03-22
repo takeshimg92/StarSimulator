@@ -66,6 +66,32 @@
       </div>
     </main>
 
+    <!-- Interior local-patch: floating desktop panel (closeable independently of slice view) -->
+    <div id="interior-float" style="display: none;">
+      <div id="interior-float-header">
+        <span>Interior</span>
+        <div id="interior-field-toggle">
+
+          <button class="field-btn active" data-field="temperature" title="Temperature">T</button>
+          <button class="field-btn" data-field="density" title="Density">&rho;</button>
+          <button class="field-btn" data-field="pressure" title="Pressure">P</button>
+          <button class="field-btn" data-field="energy" title="Energy Generation">&epsilon;</button>
+          <button class="field-btn" data-field="velocity" title="Velocity">v</button>
+        </div>
+        <button id="interior-close-btn" title="Close panel">&times;</button>
+      </div>
+      <div id="interior-canvas-wrap">
+        <canvas id="interior-canvas"></canvas>
+        <div id="interior-loading" style="display: none;">Computing...</div>
+      </div>
+      <div id="interior-depth-control">
+        <label>Position: <span id="interior-depth-label">r/R = 0.85</span></label>
+        <input type="range" id="interior-depth-slider" min="0" max="100" value="50" />
+        <label class="interior-toggle"><input type="checkbox" id="interior-streamlines-toggle" checked /> Flowlines</label>
+      </div>
+      <div id="interior-resize-grip"></div>
+    </div>
+
     <!-- Info overlay: bottom-left of viewport -->
     <!-- Scale bar: bottom-left of viewport -->
     <div id="scale-bar">
@@ -104,6 +130,25 @@
       <div id="mobile-drag-handle"><span></span><div class="handle-chevron">&#x25B2;</div></div>
       <!-- Star tab (default) -->
       <div id="tab-star" class="tab-content active">
+        <div id="interior-mobile-panel" class="mini-panel">
+          <div class="panel-header">
+            <span>Interior Convection</span>
+            <span class="help-icon" data-tooltip="2D Rayleigh-Bénard convection simulation at the selected depth. Temperature perturbations drive buoyancy: hot fluid rises, cool fluid sinks. The Rayleigh number Ra determines whether convection develops (Ra > 1708) or the fluid stays stable. Use the depth slider to explore different layers.">?</span>
+          </div>
+          <canvas id="interior-mobile-canvas"></canvas>
+          <div id="interior-mobile-controls">
+            <div id="interior-mobile-field-toggle">
+              <button class="field-btn active" data-field="temperature">T</button>
+              <button class="field-btn" data-field="density">&rho;</button>
+              <button class="field-btn" data-field="pressure">P</button>
+              <button class="field-btn" data-field="energy">&epsilon;</button>
+              <button class="field-btn" data-field="velocity">v</button>
+            </div>
+            <label class="interior-depth-mobile">r/R <span id="interior-mobile-depth-label">0.85</span>
+              <input type="range" id="interior-mobile-depth-slider" min="0" max="100" value="50" />
+            </label>
+          </div>
+        </div>
         <div id="hr-panel" class="mini-panel">
           <div class="panel-header">
             <span>H-R Diagram</span>
@@ -127,6 +172,7 @@
         </div>
         <div id="carousel-dots">
           <span class="dot active"></span>
+          <span class="dot"></span>
           <span class="dot"></span>
           <span class="dot"></span>
         </div>
