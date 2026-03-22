@@ -771,8 +771,10 @@ async function rebuildPatchSim() {
 
   patchSim.fastForward(mobile ? 30 : 60, 0.008);
 
-  patchRenderer.setSim(patchSim);
-  patchRenderer.setDepthInfo(depthInfo);
+  if (patchRenderer) {
+    patchRenderer.setSim(patchSim);
+    patchRenderer.setDepthInfo(depthInfo);
+  }
   if (patchRendererMobile) {
     patchRendererMobile.setSim(patchSim);
     patchRendererMobile.setDepthInfo(depthInfo);
@@ -886,7 +888,7 @@ function updateInterior(mass) {
       coreConvective: interiorModel.coreConvective,
     });
 
-    patchRenderer.setModel(interiorModel);
+    if (patchRenderer) patchRenderer.setModel(interiorModel);
     if (patchRendererMobile) patchRendererMobile.setModel(interiorModel);
 
     // Auto-set depth to the most interesting convective region
@@ -923,9 +925,9 @@ function updateInterior(mass) {
     patchSim.step(0.002);
   }
 
-  // Render both desktop and mobile
-  patchRenderer.render();
-  if (patchRendererMobile) patchRendererMobile.render();
+  // Render: skip hidden desktop renderer on mobile
+  if (patchRenderer && interiorActive) patchRenderer.render();
+  if (patchRendererMobile && mobileInteriorVisible) patchRendererMobile.render();
 }
 
 async function init() {
